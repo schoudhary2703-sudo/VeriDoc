@@ -1,0 +1,43 @@
+[
+  {
+    "filename": "specimen_passport_genuine.png",
+    "label": "genuine",
+    "surname": "SHARMA",
+    "given_names": "ANANYA DEVI",
+    "document_number": "Z9081234",
+    "nationality": "IND",
+    "issuing_state": "IND",
+    "dob": "980612",
+    "sex": "F",
+    "expiry": "330415",
+    "printed_dob": "12 JUN 1998",
+    "mrz_lines": [
+      "P<INDSHARMA<<ANANYA<DEVI<<<<<<<<<<<<<<<<<<<<",
+      "Z9081234<6IND9806124F3304156<<<<<<<<<<<<<<04"
+    ],
+    "expect_mrz_valid": true,
+    "expect_failed_checks": []
+  },
+  {
+    "filename": "specimen_passport_tampered_dob.png",
+    "label": "mrz_dob_digit_edit",
+    "surname": "SHARMA",
+    "given_names": "ANANYA DEVI",
+    "document_number": "Z9081234",
+    "nationality": "IND",
+    "issuing_state": "IND",
+    "dob": "880612",
+    "sex": "F",
+    "expiry": "330415",
+    "printed_dob": "12 JUN 1988",
+    "mrz_lines": [
+      "P<INDSHARMA<<ANANYA<DEVI<<<<<<<<<<<<<<<<<<<<",
+      "Z9081234<6IND8806124F3304156<<<<<<<<<<<<<<04"
+    ],
+    "expect_mrz_valid": false,
+    "expect_failed_checks": [
+      "date_of_birth",
+      "composite"
+    ]
+  }
+]

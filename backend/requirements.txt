@@ -1,0 +1,32 @@
+# ---- Phase 0: API skeleton, DB, cache ----
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+python-multipart==0.0.20
+sqlalchemy[asyncio]==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.2.3
+redis==5.2.1
+
+# ---- Testing ----
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1
+
+# ---- Phase 1: pre-processing, OCR, MRZ ----
+numpy==2.5.2
+pillow==12.3.0
+opencv-python-headless==4.12.0.88
+
+# OCR backends are optional at import time -- app.modules.ocr_mrz.ocr_engine
+# selects whichever is installed. Install at least one to run the image path.
+# The paddlepaddle wheel is ~100 MB; on an unreliable link fetch it with
+# `curl -C -` and pip-install the local file, since pip cannot resume.
+paddlepaddle==3.3.1
+paddleocr==3.7.0
+# pytesseract==0.3.13     # fallback; also needs the tesseract binary on PATH
+
+# ---- Later phases (kept out of the image until needed) ----
+# Phase 2: torch, timm, scikit-image
+# Phase 3: insightface, onnxruntime

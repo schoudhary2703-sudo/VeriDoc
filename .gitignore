@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# ML artifacts
+backend/ml/checkpoints/
+*.pt
+*.pth
+*.onnx
+
+# Datasets — never commit bulk or real data
+data/raw/
+data/synthetic/
+!data/samples/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

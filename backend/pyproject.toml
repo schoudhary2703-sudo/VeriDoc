@@ -1,0 +1,13 @@
+[project]
+name = "veridoc"
+version = "0.1.0"
+description = "VeriDoc - AI-based fake identity & document screening system (SIH26188)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
