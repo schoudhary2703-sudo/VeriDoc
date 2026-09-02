@@ -211,3 +211,61 @@ class TestOCRIntegration:
         result = run_ocr_mrz_on_path(path, engine=engine)
         assert result.mrz_check.present, "OCR did not recover a readable MRZ"
         assert result.mrz_check.valid
+
+
+class TestMRZBandLocalization:
+    """The MRZ-band fast path: OCR only the zone that carries the checksum."""
+
+    @pytest.fixture
+    def genuine_image(self):
+        cv2 = pytest.importorskip("cv2")
+        path = SAMPLES_DIR / "specimen_passport_genuine.png"
+        if not path.exists():
+            pytest.skip("Specimen images not generated")
+        return cv2.imread(str(path))
+
+    def test_band_covers_every_mrz_line(self, genuine_image) -> None:
+        """Regression: an early version returned a 42 px strip containing only
+        the second of the two TD3 lines, silently losing half the zone."""
+        from app.modules.preprocessing.normalize import find_mrz_band
+
+        box = find_mrz_band(genuine_image)
+        assert box is not None, "MRZ band not located"
+
+        _, y1, _, y2 = box
+        height = y2 - y1
+        assert height > 60, f"band is {height}px; too short to hold two MRZ lines"
+        # The band is a strip, not most of the page.
+        assert height < genuine_image.shape[0] * 0.4
+
+    def test_band_sits_in_the_lower_document(self, genuine_image) -> None:
+        from app.modules.preprocessing.normalize import find_mrz_band
+
+        _, y1, _, _ = find_mrz_band(genuine_image)
+        assert y1 > genuine_image.shape[0] * 0.5
+
+
+class TestTrailingFillerTolerance:
+    """OCR drops trailing '<' fillers from name lines; the parser must cope."""
+
+    def test_name_line_short_by_one_filler_is_accepted(self) -> None:
+        truncated = ICAO_LINE_1[:-1]  # 43 chars, still ends in filler
+        assert len(truncated) == 43
+        _, check = parse_mrz(f"{truncated}\n{ICAO_LINE_2}")
+        assert check.present
+        assert check.valid
+
+    def test_data_line_is_never_padded(self) -> None:
+        """Padding line 2 would invent a check digit and turn a truncated read
+        into a confident wrong answer."""
+        from app.modules.ocr_mrz.mrz_parser import _fit_to_layout
+
+        # Ends in a check digit, not filler -> must be refused.
+        assert _fit_to_layout(ICAO_LINE_2[:-1], 44) is None
+        # Ends in filler -> safe to restore.
+        assert _fit_to_layout(ICAO_LINE_1[:-1], 44) == ICAO_LINE_1
+
+    def test_excessive_truncation_is_refused(self) -> None:
+        from app.modules.ocr_mrz.mrz_parser import _fit_to_layout
+
+        assert _fit_to_layout(ICAO_LINE_1[:-10], 44) is None

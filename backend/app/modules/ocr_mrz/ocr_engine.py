@@ -61,19 +61,41 @@ class PaddleOCREngine(OCREngine):
 
     name = "paddleocr"
 
-    def __init__(self, lang: str = "en") -> None:
+    # Measured on a cropped MRZ band (CPU, oneDNN disabled):
+    #
+    #   PP-OCRv6_medium   17.9 s   MRZ checksum valid
+    #   PP-OCRv5_server    9.4 s   MRZ checksum valid   <- default
+    #   PP-OCRv5_mobile    3.8 s   MRZ checksum FAILS
+    #
+    # Mobile is the fastest by far and misreads a character, which the ICAO
+    # checksum then rejects -- a fast wrong answer on a border checkpoint is
+    # worse than a slower right one, so it is not the default. It stays
+    # selectable for latency experiments.
+    DEFAULT_DET_MODEL = "PP-OCRv5_server_det"
+    DEFAULT_REC_MODEL = "PP-OCRv5_server_rec"
+    FAST_DET_MODEL = "PP-OCRv5_mobile_det"
+    FAST_REC_MODEL = "PP-OCRv5_mobile_rec"
+
+    def __init__(self, lang: str = "en", *, fast: bool = False) -> None:
         if not self.is_available():
             raise OCREngineError("paddleocr is not installed")
         from paddleocr import PaddleOCR
 
+        det = self.FAST_DET_MODEL if fast else self.DEFAULT_DET_MODEL
+        rec = self.FAST_REC_MODEL if fast else self.DEFAULT_REC_MODEL
+
         # oneDNN is disabled deliberately. paddlepaddle 3.3.1's oneDNN CPU kernels
-        # raise NotImplementedError on the PP-OCRv6 detection graph
+        # raise NotImplementedError on the PP-OCR detection graph
         # ("ConvertPirAttribute2RuntimeAttribute not support"). The plain CPU
         # kernels produce identical output, so this costs a little speed and
         # buys working inference.
         try:
             self._ocr = PaddleOCR(
-                use_textline_orientation=True, lang=lang, enable_mkldnn=False
+                use_textline_orientation=False,
+                lang=lang,
+                enable_mkldnn=False,
+                text_detection_model_name=det,
+                text_recognition_model_name=rec,
             )
             self._api_version = 3
         except (TypeError, ValueError):

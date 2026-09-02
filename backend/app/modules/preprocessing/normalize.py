@@ -168,6 +168,83 @@ def denoise(image: np.ndarray) -> np.ndarray:
     return cv2.bilateralFilter(image, d=5, sigmaColor=50, sigmaSpace=50)
 
 
+def find_mrz_band(
+    image: np.ndarray,
+    *,
+    search_fraction: float = 0.45,
+    min_width_ratio: float = 0.55,
+    padding: int = 12,
+) -> tuple[int, int, int, int] | None:
+    """Locate the machine-readable zone as a (x1, y1, x2, y2) box.
+
+    The MRZ is the densest run of wide, uniform-height text on the document and
+    always sits in the lower portion, so we look there for rows whose horizontal
+    text density spans most of the page width.
+
+    Worth doing for two reasons. Speed: OCR over the whole document takes 82-93 s
+    on CPU, and the band is roughly a fifth of the page. Accuracy: the MRZ is the
+    one field with a checksum, so isolating it removes every competing text
+    region that OCR might otherwise mis-segment against it.
+
+    Returns None when no band is confidently found, so callers fall back to
+    whole-document OCR rather than silently reading the wrong strip.
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    height, width = gray.shape
+
+    # Blackhat lifts dark text off a light background.
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (21, 5))
+    blackhat = cv2.morphologyEx(gray, cv2.MORPH_BLACKHAT, kernel)
+
+    thresh = cv2.threshold(blackhat, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+    # Close along x so the characters of one MRZ line merge into a single bar.
+    closed = cv2.morphologyEx(
+        thresh, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (41, 3))
+    )
+
+    search_top = int(height * (1.0 - search_fraction))
+    row_coverage = (closed[search_top:] > 0).sum(axis=1) / width
+
+    wide_rows = np.where(row_coverage >= min_width_ratio)[0]
+    if wide_rows.size == 0:
+        return None
+
+    # Group qualifying rows into runs, tolerating the blank gap *between* MRZ
+    # lines. Without this the band collapses onto a single line -- TD3 has two
+    # lines and TD1 has three, so returning one of them silently loses half the
+    # zone and every check digit on it.
+    # Measured on a 660 px specimen: the blank gap between two TD3 lines is 37
+    # rows, so a tolerance of 5% (33 px) split the zone in half. Line spacing
+    # scales with document height, hence the proportional term.
+    max_gap = max(int(height * 0.09), 40)
+    runs: list[list[int]] = [[int(wide_rows[0])]]
+    for row in wide_rows[1:]:
+        if int(row) - runs[-1][-1] <= max_gap:
+            runs[-1].append(int(row))
+        else:
+            runs.append([int(row)])
+
+    # The MRZ is the bottom-most such block on every ICAO layout.
+    band = runs[-1]
+
+    y1 = max(0, search_top + band[0] - padding)
+    y2 = min(height, search_top + band[-1] + padding)
+
+    if y2 - y1 < 20:
+        return None
+
+    return 0, y1, width, y2
+
+
+def extract_mrz_band(image: np.ndarray, **kwargs) -> np.ndarray | None:
+    """Return the cropped MRZ strip, or None when it cannot be located."""
+    box = find_mrz_band(image, **kwargs)
+    if box is None:
+        return None
+    x1, y1, x2, y2 = box
+    return image[y1:y2, x1:x2]
+
+
 def preprocess(image: np.ndarray, *, enhance: bool = True) -> PreprocessResult:
     """Run the full stage-1 chain.
 

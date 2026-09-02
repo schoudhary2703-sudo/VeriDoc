@@ -37,6 +37,22 @@ data-access agreement. It is published on Zenodo under CC-BY-4.0 / CC0 as a sing
 2.6 GB archive and can be pulled directly. Nothing in this project now requires an
 application with lead time - every dataset named above is fetch-on-demand.
 
+**Downloaded and verified 2026-09-02.** FantasyID is in `data/raw/FantasyID`
+(2.4 GB, MD5 checked against the Zenodo record). What it actually contains, now
+that we have looked: 362 fantasy cards *printed on a card printer and
+re-captured* with an iPhone 15 Pro, a Huawei Mate 30 and a Kyocera scanner, with
+an official train/test split whose two halves use different card templates, and
+per-image JSON giving every field a bounding box plus an original/modified
+provenance flag. 196 images use the Indian template. Attacks are face swaps
+(Inswapper, FaceDancer) and diffusion text inpainting (DiffSTE, TextDiffuser-2).
+
+**One licensing nuance to state accurately in the submission:** the cards are
+fictional, but the *faces* printed on the bonafide cards are real people, drawn
+from AMFD, the Face Research Lab London set, and HQ-WMCA. The FantasyID release
+is CC-BY-4.0/CC0, while HQ-WMCA is ordinarily an Idiap research-licence dataset.
+So "no real personal documents" holds exactly as written; "no real faces" does
+not, and should not be claimed.
+
 **A finding worth knowing before you commit to an approach:** a 2026 benchmark study (DocForge-Bench) found that even state-of-the-art forgery detectors get high image-level discrimination (AUC ≥ 0.76) but near-zero *pixel-level* localization accuracy, because tampered regions are tiny — typically 0.27–4.17% of the image, versus 10–30% in natural-image forgery benchmarks that most forensics models were designed around. **Practical implication for your build:** don't over-promise pixel-perfect tamper heatmaps. Aim for image/field-level classification ("this photo region shows splice artifacts") with a coarse bounding box, not exact-pixel segmentation — it's honestly achievable in your timeline and still gives the evidence panel something concrete to show.
 
 **Recommended training sequence:**

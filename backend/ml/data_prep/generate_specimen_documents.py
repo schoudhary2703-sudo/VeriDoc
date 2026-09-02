@@ -187,10 +187,15 @@ def render_specimen(spec: Specimen) -> Image.Image:
         y += 52
 
     # Watermark: unmistakable, and diagonal so it cannot be cropped away cleanly.
+    #
+    # Alpha is kept low deliberately. At alpha 70 the mark crossed the printed
+    # data rows and corrupted OCR -- "12 JUN 1998" was read as "SPECPPUN 1998" --
+    # which would have broken the printed-vs-MRZ field cross-check in Phase 4.
+    # It stays clearly visible to a human while leaving the text machine-readable.
     watermark = Image.new("RGBA", CARD_SIZE, (0, 0, 0, 0))
     wm_draw = ImageDraw.Draw(watermark)
     wm_font = _load_font(SANS_FONT_CANDIDATES, 66)
-    wm_draw.text((150, 300), "SPECIMEN - NOT VALID", font=wm_font, fill=(200, 60, 60, 70))
+    wm_draw.text((150, 300), "SPECIMEN - NOT VALID", font=wm_font, fill=(200, 60, 60, 34))
     image = Image.alpha_composite(image.convert("RGBA"), watermark.rotate(12)).convert("RGB")
 
     draw = ImageDraw.Draw(image)

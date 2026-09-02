@@ -140,19 +140,43 @@ def detect_format(lines: list[str]) -> MRZFormat | None:
     return None
 
 
+# OCR reliably drops a trailing filler or two from the end of a name line, since
+# a run of identical '<' glyphs has no word boundary to anchor segmentation.
+MAX_FILLER_PAD = 3
+
+
+def _fit_to_layout(line: str, length: int) -> str | None:
+    """Return `line` conformed to `length`, or None if it cannot be.
+
+    Padding is allowed only when the line is short *and already ends in filler*.
+    That restriction matters: on a TD3 the name line is filler-padded and safe to
+    restore, whereas line 2 ends with the composite check digit -- padding that
+    would invent a check digit and turn a truncated read into a confident wrong
+    answer. Silently repairing data fields is exactly the failure mode a checksum
+    exists to prevent.
+    """
+    if len(line) == length:
+        return line
+    if len(line) < length and length - len(line) <= MAX_FILLER_PAD and line.endswith(FILLER):
+        return line.ljust(length, FILLER)
+    return None
+
+
 def find_mrz_lines(text: str) -> tuple[MRZFormat | None, list[str]]:
     """Locate MRZ lines inside arbitrary OCR output.
 
     OCR of a full document returns the printed fields as well as the MRZ, so we
-    scan for a run of consecutive lines that match a known layout exactly.
+    scan for a run of consecutive lines matching a known layout, tolerating the
+    trailing-filler loss described above.
     """
     candidates = [line for line in _normalize_lines(text) if _VALID_CHARS.match(line)]
 
     for fmt, (count, length) in _LAYOUTS.items():
         run: list[str] = []
         for line in candidates:
-            if len(line) == length:
-                run.append(line)
+            fitted = _fit_to_layout(line, length)
+            if fitted is not None:
+                run.append(fitted)
                 if len(run) == count:
                     return fmt, run
             else:

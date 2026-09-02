@@ -126,6 +126,84 @@ class MRZCheckResult(BaseModel):
         return f"{fmt} MRZ check digit failure: {names}"
 
 
+class TamperType(str, Enum):
+    """The tamper classes the forensics engine reports on.
+
+    Accuracy is reported per type, never blended into one number -- a detector
+    that catches photo splices but misses date edits is a different (and more
+    dangerous) tool than one that is uniformly mediocre.
+    """
+
+    PHOTO_SPLICE = "photo_splice"
+    FIELD_EDIT = "field_edit"        # altered DOB / name / document number
+    STAMP_OVERLAY = "stamp_overlay"
+    RECOMPRESSION = "recompression"
+    COPY_MOVE = "copy_move"
+    # Reported when a detector establishes that a document was digitally
+    # manipulated but cannot attribute which kind. The learned classifier is
+    # binary (see ml/data_prep/fantasyid_dataset.py for why), so this is the
+    # honest label for its positives rather than guessing a specific type.
+    DIGITAL_MANIPULATION = "digital_manipulation"
+
+
+class Region(BaseModel):
+    """A coarse region of interest, in pixels.
+
+    Deliberately coarse. Tampered areas on ID documents occupy 0.27-4.17% of the
+    image and state-of-the-art detectors score near-zero on pixel-level
+    localization (DocForge-Bench 2026), so this is a bounding box for an officer
+    to look at -- never a claim of exact-pixel segmentation. See
+    docs/DATA_STRATEGY.md section 2.
+    """
+
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    score: float = Field(ge=0.0, le=1.0, default=0.0)
+
+    @property
+    def area(self) -> int:
+        return max(0, self.x2 - self.x1) * max(0, self.y2 - self.y1)
+
+
+class ForensicsFinding(BaseModel):
+    """One forensic observation, with the reasoning attached.
+
+    `detail` is written to be read aloud to a human. A finding that cannot be
+    explained in a sentence does not belong in the evidence panel.
+    """
+
+    check: str
+    tamper_type: TamperType | None = None
+    flagged: bool
+    confidence: float = Field(ge=0.0, le=1.0)
+    detail: str
+    regions: list[Region] = Field(default_factory=list)
+
+
+class ForensicsResult(BaseModel):
+    """Combined output of the forensics engine (stage 3)."""
+
+    tampered: bool = False
+    score: float = Field(ge=0.0, le=1.0, default=0.0)
+    findings: list[ForensicsFinding] = Field(default_factory=list)
+    processing_time_ms: int = 0
+
+    @property
+    def flagged_findings(self) -> list[ForensicsFinding]:
+        return [f for f in self.findings if f.flagged]
+
+    def summary(self) -> str:
+        flagged = self.flagged_findings
+        if not flagged:
+            return f"No tamper indicators found across {len(self.findings)} forensic checks"
+        names = ", ".join(
+            f.tamper_type.value if f.tamper_type else f.check for f in flagged
+        )
+        return f"Tamper indicators: {names}"
+
+
 class OCRMRZResult(BaseModel):
     """Combined output of the Phase 1 pipeline."""
 
