@@ -39,17 +39,68 @@ Z3541287<9IND9203147F3105319<<<<<<<<<<<<<<08
 Generated with `build_td3_mrz` in `backend/ml/data_prep/generate_specimen_documents.py`
 — ask for any other name or number and it takes one call.
 
+**The second traveller on the screen was invalid too.** The genuine-case card
+(PRIYA VENKATESH, M7712854, DOB 28 Jul 1988, expiry 21 Nov 2034) had the same
+problem — line 2 was 38 characters and its document-number, date-of-birth,
+expiry and composite check digits all failed. Corrected, all five validate:
+
+```
+P<INDVENKATESH<<PRIYA<<<<<<<<<<<<<<<<<<<<<<<
+M7712854<0IND8807283F3411218<<<<<<<<<<<<<<00
+```
+
+> **A trap worth naming, because the first fix fell into it.** Rebuilding the
+> check digits around the *old* expiry produced
+> `M7712854<0IND8807283F3402111<<<<<<<<<<<<<<04`, which passes all five check
+> digits and is still wrong: it encodes 11 Feb 2034 while the printed page says
+> 21 Nov 2034. The broken MRZ's expiry field had been wrong all along, and
+> recomputing checksums around it just made the error self-consistent. On a
+> screen whose own caption reads "every printed field agrees with the
+> machine-readable zone", that is the exact forgery our cross-check is built to
+> catch — the screen would have been arguing against itself. **Always read the
+> field values off the printed page, never off the MRZ you are repairing.**
+
+This one matters more than it looks: that card is the screen's *genuine*
+example, and it carries the claim "all five check digits recompute correctly
+and every printed field agrees with the machine-readable zone." A judge who
+checks the genuine card and finds it fails is a worse outcome than one who
+checks the flagged card.
+
+**Status: both fixed.** All six MRZ blocks across `VeriDoc Verify Screen.html`
+and `VeriDoc Officer Console.html` now carry 44-character lines with all five
+check digits passing, and each agrees with the printed fields beside it. The
+Officer Console was not part of the original review but contained two copies of
+the same invalid Ananya MRZ.
+
+**Check it yourself before any slide or demo:**
+
+```bash
+python backend/scripts/audit_mockup_claims.py "VeriDoc Verify Screen.html"
+```
+
+That script validates every MRZ, cross-checks it against the printed dates on
+the same page, and greps for the stale claims in section 2. It exits non-zero on
+any finding. Run it on anything a judge will see.
+
 ---
 
 ## 2. Claims that outrun the system
 
-| The screen says | What the system does |
-|---|---|
-| "Interpol SLTD, the national lookout circular, or state BOLO lists" | A **seeded local table of four records**. The API returns `source: "simulated local record set (no live watchlist access)"` on every response, and there is a test asserting it. Name it as simulated in the UI too. |
-| Face threshold **0.75**, score 0.62 shown as "weak" | Our threshold is **0.40** — InsightFace's published default, *not* calibrated on our data, because we have no document+live capture pairs. At 0.40, a score of 0.62 **passes**. |
-| "Stamp and overprint consistency" check | **This check does not exist.** Ours are: MRZ checksum, compression consistency (ELA), duplicated-region detection, sensor-noise consistency (advisory), intra-document face consistency, face match, record cross-check. |
-| "Model confidence 0.71 · below the 0.85 auto-clear threshold" | There is no model confidence, and **no auto-clear**. This also contradicts the screen's own — correct — line that the system never accepts or rejects on its own. Recommend deleting it. |
-| "Analysis took 6.4s" | Measured **~1.9 s** warm, ~2.2 s with face analysis. The screen is pessimistic; use the real number. |
+**All five are now fixed** in both `VeriDoc Verify Screen.html` and
+`VeriDoc Officer Console.html`. What was wrong and what it became:
+
+| The screen said | What the system does | Fix applied |
+|---|---|---|
+| "Interpol SLTD, the national lookout circular, or state BOLO lists" | A **seeded local table of four records**. The API returns `source: "simulated local record set (no live watchlist access)"` on every response, and there is a test asserting it. | Reworded to "the simulated local record set", stating plainly that this build has no live watchlist access and those feeds are not queried. The Officer Console's "Exact hit on Interpol SLTD" now reads as a seeded demo record. |
+| Face threshold **0.75**, score 0.62 shown as "weak" | Our threshold is **0.40** — InsightFace's published default, *not* calibrated on our data, because we have no document+live capture pairs. At 0.40, a score of 0.62 **passes**. | Threshold corrected to 0.40 everywhere. The review-case score moved 0.62 → **0.31** so the "weak, a recapture may resolve this" narrative stays true against the real threshold. The genuine case keeps 0.94, which passes either way. |
+| "Stamp and overprint consistency" check | **This check does not exist.** Ours are: MRZ checksum, compression consistency (ELA), duplicated-region detection, sensor-noise consistency (advisory), intra-document face consistency, face match, record cross-check. | Repurposed into the **intra-document face consistency** row, which is a real check and was missing from the screen entirely (see section 3). Two birds. |
+| "Model confidence 0.71 · below the 0.85 auto-clear threshold" | There is no model confidence, and **no auto-clear**. This also contradicts the screen's own — correct — line that the system never accepts or rejects on its own. | Confidence bar and threshold removed from both screens, replaced with a line stating the recommendation is advisory and there is no auto-clear. The summary badge is now "Review", not "Review · confidence 0.71". |
+| "Analysis took 6.4s" | Measured **~1.9 s** warm, ~2.2 s with face analysis. | Every timing on both screens was rewritten into the real 1.9–2.7 s band. It was not only the 6.4 s the review spotted: the Verify Screen also carried a 4.2 s, and the Officer Console queue ran 3.8 s to 10.4 s per case with a **"p95 11.3s"** latency figure on the header. A p95 five times the true warm run is the kind of number a judge asks you to reproduce live. |
+
+Note on the confidence bar: it could not simply be relabelled "risk score",
+because the mock values invert. A confidence of 0.96 on the genuine case would
+have become a risk of 0.96 — the opposite reading. Removing it was the only
+safe fix.
 
 ---
 
@@ -66,6 +117,20 @@ false positives, and the mechanism is the most memorable thing in the project:
 > face-swapped 0.844. **Too much consistency is the tamper signal.**
 
 It deserves its own evidence row.
+
+**Done** — it took over the row vacated by the non-existent "stamp and overprint
+consistency" check. The review case now reads: portrait and ghost image agree at
+0.731, normal for two physically different renderings of one photograph, and a
+face swap pushes this above the 0.884 threshold in
+`backend/app/modules/face/face_match.py:75`. The genuine case shows 0.742.
+
+One inconsistency surfaced while checking these numbers and is **not** resolved:
+the comment on `CHECK_WEIGHTS["intra_document_face_consistency"]` in
+`backend/app/modules/forensics/engine.py:32` says this lifts face-swap recall
+from **28.7% to 40.0%**, while `docs/FORENSICS_FANTASYID.md:42` and `CLAUDE.md`
+both say **29% to 46%**. One of the two is stale. Whoever knows which number the
+last evaluation actually produced should reconcile them — the 46% figure is the
+one being quoted in the pitch, so it is worth being certain of.
 
 ---
 
