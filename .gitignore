@@ -14,6 +14,9 @@ dist/
 .vite/
 *.local
 
+# Local SQLite fallback database (runtime artifact, see app/db/session.py)
+*.db
+
 # Environment
 .env
 .env.*
