@@ -62,6 +62,13 @@ SIGNAL_WEIGHTS: dict[str, float] = {
 REVIEW_THRESHOLD = 0.20
 HIGH_RISK_THRESHOLD = 0.55
 
+# Below this fraction of checks actually assessing the document, the officer is
+# told how thin the evidence is. A verdict drawn from two of seven checks is not
+# the same object as one drawn from seven, and the difference is invisible unless
+# it is stated: a document with no MRZ, no record match and no live capture can
+# come back "clear" having had almost nothing verified about it.
+LOW_COVERAGE_RATIO = 0.6
+
 
 def _noisy_or(contributions: list[float]) -> float:
     """Accumulate independent evidence without letting silence cancel it."""
@@ -251,6 +258,29 @@ def _band_for(score: float) -> RiskBand:
     return RiskBand.CLEAR
 
 
+def _coverage_note(evidence: list[EvidenceItem]) -> str:
+    """Warn when few checks could actually assess this document."""
+    if not evidence:
+        return ""
+
+    assessed = [e for e in evidence if e.status is not EvidenceStatus.NOT_APPLICABLE]
+    ratio = len(assessed) / len(evidence)
+    if ratio >= LOW_COVERAGE_RATIO:
+        return ""
+
+    skipped = [
+        e.check.replace("_", " ")
+        for e in evidence
+        if e.status is EvidenceStatus.NOT_APPLICABLE
+    ]
+    return (
+        f" Note that only {len(assessed)} of {len(evidence)} checks could assess this "
+        f"document: {', '.join(skipped)} could not run. This verdict rests on less "
+        f"evidence than usual, and the checks that did not run are not evidence that "
+        f"the document is genuine."
+    )
+
+
 def _recommendation(band: RiskBand, evidence: list[EvidenceItem]) -> str:
     failed = [e for e in evidence if e.status is EvidenceStatus.FAIL]
     weak = [e for e in evidence if e.status is EvidenceStatus.WEAK]
@@ -258,10 +288,12 @@ def _recommendation(band: RiskBand, evidence: list[EvidenceItem]) -> str:
     def phrase(items: list[EvidenceItem]) -> str:
         return ", ".join(e.check.replace("_", " ") for e in items)
 
+    coverage = _coverage_note(evidence)
+
     if band is RiskBand.HIGH_RISK:
         return (
             f"Recommend secondary inspection before the traveller is cleared. "
-            f"Failed checks: {phrase(failed)}."
+            f"Failed checks: {phrase(failed)}.{coverage}"
         )
     if band is RiskBand.REVIEW:
         parts = []
@@ -273,10 +305,11 @@ def _recommendation(band: RiskBand, evidence: list[EvidenceItem]) -> str:
             "Officer review recommended before clearing — "
             + "; ".join(parts)
             + ". The system does not accept or reject on its own."
+            + coverage
         )
     return (
         "No tamper indicators found. Every applicable check passed; the officer "
-        "retains the final decision."
+        "retains the final decision." + coverage
     )
 
 

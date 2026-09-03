@@ -142,3 +142,77 @@ class TestEngineIntegration:
         )
 
         assert _combine([strong]) == pytest.approx(_combine([strong, not_applicable]))
+
+
+class TestTightCropDetection:
+    """Regression: a closely-framed face must still be detected.
+
+    RetinaFace's anchors expect a face to occupy a modest fraction of the frame,
+    so a tight head-shot returned zero detections and the face match silently
+    reported "not performed". A traveller leaning towards the camera produces
+    exactly that framing, so this is a real capture condition rather than a
+    laboratory curiosity.
+    """
+
+    @pytest.fixture(scope="module")
+    def face_match(self):
+        return _require_insightface()
+
+    def _tight_crop(self, face_match, image):
+        import cv2  # noqa: F401  (imported for parity with callers)
+
+        face = face_match.detect_faces(image)[0]
+        x1, y1, x2, y2 = (int(v) for v in face.bbox)
+        pad = 40
+        return image[max(y1 - pad, 0) : y2 + pad, max(x1 - pad, 0) : x2 + pad]
+
+    def test_tightly_cropped_face_is_still_detected(self, face_match) -> None:
+        import cv2
+
+        paths = _sample("genuine", 3)
+        for path in paths:
+            image = cv2.imread(str(path))
+            if not face_match.detect_faces(image):
+                continue
+            crop = self._tight_crop(face_match, image)
+            assert face_match.detect_faces(crop), (
+                f"tight crop of {path.name} lost the face; the padded retry failed"
+            )
+            return
+        pytest.skip("no sample with a detectable face available")
+
+    def test_same_person_matches_across_a_tight_crop(self, face_match) -> None:
+        import cv2
+
+        for path in _sample("genuine", 3):
+            image = cv2.imread(str(path))
+            if not face_match.detect_faces(image):
+                continue
+            result = face_match.match_document_to_capture(
+                image, self._tight_crop(face_match, image)
+            )
+            assert result.performed, result.detail
+            assert result.matched is True
+            assert result.match_score is not None and result.match_score > 0.7
+            return
+        pytest.skip("no sample with a detectable face available")
+
+    def test_padded_retry_keeps_bboxes_in_the_original_frame(self, face_match) -> None:
+        """Coordinates must stay meaningful after the retry, or the evidence
+        panel would draw regions outside the image."""
+        import cv2
+
+        for path in _sample("genuine", 3):
+            image = cv2.imread(str(path))
+            if not face_match.detect_faces(image):
+                continue
+            crop = self._tight_crop(face_match, image)
+            faces = face_match.detect_faces(crop)
+            assert faces
+            height, width = crop.shape[:2]
+            x1, y1, x2, y2 = faces[0].bbox
+            # Allow a small overhang: the true face may extend past a tight crop.
+            assert -width < x1 < width * 1.5
+            assert -height < y1 < height * 1.5
+            return
+        pytest.skip("no sample with a detectable face available")

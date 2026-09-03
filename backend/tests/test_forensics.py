@@ -134,3 +134,50 @@ class TestAdvisoryChecks:
         finding = copy_move.detect_splice(genuine)
         assert not finding.flagged
         assert "advisory" in finding.detail.lower() or not finding.regions
+
+
+class TestApplicabilityHonesty:
+    """A check that could not run must never render as a pass.
+
+    Three separate checks have shipped a green tick they had not earned: the
+    uncalibrated noise check, and the copy-move and ELA branches that decline to
+    analyse a document. The badge and the explanation must agree, because an
+    officer reads the badge.
+    """
+
+    def test_no_check_says_pass_while_its_detail_says_otherwise(self, genuine) -> None:
+        result = engine.analyze(genuine)
+        for finding in result.findings:
+            detail = finding.detail.lower()
+            declines = any(
+                phrase in detail
+                for phrase in (
+                    "not applicable",
+                    "too few",
+                    "too small",
+                    "too text-dense",
+                    "advisory only",
+                    "no second portrait",
+                    "not yet calibrated",
+                )
+            )
+            if declines:
+                assert not finding.applicable, (
+                    f"{finding.check} declines to analyse but is marked applicable, "
+                    f"so it renders as a pass: {finding.detail}"
+                )
+
+    def test_text_dense_document_does_not_pass_copy_move(self) -> None:
+        """A page of solid text cannot be cleared by a test that skipped it."""
+        import numpy as np
+
+        text_page = np.full((600, 900, 3), 245, dtype=np.uint8)
+        for y in range(40, 560, 22):
+            cv2.putText(
+                text_page, "SPECIMEN TEXT LINE FOR DENSITY", (20, y),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (20, 20, 20), 2, cv2.LINE_AA,
+            )
+
+        finding = copy_move.detect_copy_move(text_page)
+        if "not applicable" in finding.detail.lower() or "too few" in finding.detail.lower():
+            assert not finding.applicable

@@ -50,6 +50,7 @@ from __future__ import annotations
 import functools
 import time
 
+import cv2
 import numpy as np
 
 from app.core.schemas import (
@@ -102,9 +103,50 @@ def _face_area(face) -> float:
     return float((x2 - x1) * (y2 - y1))
 
 
-def detect_faces(image: np.ndarray) -> list:
-    """Return detected faces, largest first."""
-    return sorted(_analyzer().get(image), key=_face_area, reverse=True)
+# Border added around an image when a first detection pass finds nothing, as a
+# fraction of the longest side.
+RETRY_PAD_RATIO = 0.35
+
+
+def detect_faces(image: np.ndarray, *, allow_padded_retry: bool = True) -> list:
+    """Return detected faces, largest first.
+
+    Retries once with a padded border when nothing is found. RetinaFace's anchors
+    expect a face to occupy a modest fraction of the frame, so a tightly cropped
+    head-shot is missed entirely: a 470x622 crop containing a 390x542 face
+    returned zero detections, while the same face with more margin around it
+    returned one.
+
+    That is a real capture condition, not a laboratory curiosity -- a traveller
+    leaning towards the camera produces exactly this framing, and without the
+    retry the face match would silently report "not performed" rather than
+    comparing the faces it was given.
+    """
+    faces = sorted(_analyzer().get(image), key=_face_area, reverse=True)
+    if faces or not allow_padded_retry:
+        return faces
+
+    pad = int(max(image.shape[:2]) * RETRY_PAD_RATIO)
+    if pad <= 0:
+        return faces
+
+    # A neutral constant border, not BORDER_REPLICATE. Replicating the edge
+    # pixels smears them into streaks that read as structure and suppress
+    # detection: at this pad ratio REPLICATE still found nothing, while a flat
+    # grey border found the face.
+    padded = cv2.copyMakeBorder(
+        image, pad, pad, pad, pad, cv2.BORDER_CONSTANT, value=(128, 128, 128)
+    )
+    retried = sorted(_analyzer().get(padded), key=_face_area, reverse=True)
+
+    # Map bounding boxes back onto the original frame so callers' coordinates
+    # stay meaningful. Embeddings are unaffected -- the pixels are identical.
+    for face in retried:
+        face.bbox = face.bbox - pad
+        if getattr(face, "kps", None) is not None:
+            face.kps = face.kps - pad
+
+    return retried
 
 
 def cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:

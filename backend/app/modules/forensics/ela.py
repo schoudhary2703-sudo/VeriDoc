@@ -143,6 +143,7 @@ def analyze(
             check="error_level_analysis",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Image too small for block-level error analysis",
         )
@@ -156,6 +157,7 @@ def analyze(
             check="error_level_analysis",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Document is too text-dense for reliable error-level analysis",
         )
@@ -182,6 +184,10 @@ def analyze(
             check="error_level_analysis",
             tamper_type=None,
             flagged=False,
+            # Declining to judge, not clearing the document: an anomaly this
+            # widespread is indistinguishable from a poor capture, so the check
+            # has no opinion rather than a favourable one.
+            applicable=False,
             confidence=0.0,
             detail=(
                 f"Elevated compression error across {fraction:.0%} of the document, too "

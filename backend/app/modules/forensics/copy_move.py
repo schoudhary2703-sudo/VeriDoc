@@ -108,6 +108,7 @@ def detect_copy_move(
             check="copy_move_detection",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Too few distinctive features to test for duplicated regions",
         )
@@ -124,6 +125,7 @@ def detect_copy_move(
             check="copy_move_detection",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Document is almost entirely printed text; copy-move test not applicable",
         )

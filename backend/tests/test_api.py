@@ -303,3 +303,54 @@ class TestAuditLog:
         )
         assert [d["action"] for d in entry["decisions"]] == ["referred", "escalated"]
         assert entry["officer_action"] == "escalated"
+
+
+class TestCoverageHonesty:
+    """The officer must be told when few checks could assess the document.
+
+    A verdict drawn from two of seven checks is not the same object as one drawn
+    from seven, and the difference is invisible unless it is stated.
+    """
+
+    async def test_full_coverage_adds_no_caveat(self, client: httpx.AsyncClient) -> None:
+        from app.core.risk_scoring import _coverage_note
+        from app.core.schemas import EvidenceItem, EvidenceStatus
+
+        assessed = [
+            EvidenceItem(stage="forensics", check=f"c{i}", status=EvidenceStatus.PASS, detail="d")
+            for i in range(7)
+        ]
+        assert _coverage_note(assessed) == ""
+
+    async def test_thin_coverage_is_stated_plainly(self, client: httpx.AsyncClient) -> None:
+        from app.core.risk_scoring import _coverage_note
+        from app.core.schemas import EvidenceItem, EvidenceStatus
+
+        thin = [
+            EvidenceItem(stage="forensics", check="ran", status=EvidenceStatus.PASS, detail="d")
+        ] + [
+            EvidenceItem(
+                stage="forensics", check=f"skipped{i}",
+                status=EvidenceStatus.NOT_APPLICABLE, detail="d",
+            )
+            for i in range(6)
+        ]
+        note = _coverage_note(thin)
+        assert "1 of 7 checks" in note
+        assert "not evidence that the document is genuine" in note
+
+    async def test_recommendation_carries_the_caveat(self, client: httpx.AsyncClient) -> None:
+        """A document with no MRZ, no record match and no live capture must not
+        read as thoroughly verified."""
+        from app.core.risk_scoring import score_verification
+        from app.core.schemas import (
+            DBCrosscheckResult, FaceMatchResult, ForensicsResult, MRZCheckResult,
+        )
+
+        verdict = score_verification(
+            mrz=MRZCheckResult(present=False),
+            forensics=ForensicsResult(),
+            face=FaceMatchResult(performed=False),
+            db=DBCrosscheckResult(performed=False),
+        )
+        assert "could assess this document" in verdict.recommendation
