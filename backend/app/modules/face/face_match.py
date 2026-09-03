@@ -93,7 +93,16 @@ def _analyzer():
 
     from insightface.app import FaceAnalysis
 
-    app = FaceAnalysis(name=MODEL_NAME, providers=["CPUExecutionProvider"])
+    # Only detection and recognition are loaded. buffalo_l also ships two
+    # landmark models and a gender/age estimator, which FaceAnalysis runs on
+    # every detected face by default -- and whose output this project never
+    # reads. Beyond the wasted time, running an age and gender classifier on
+    # travellers is not something a border system should be doing incidentally.
+    app = FaceAnalysis(
+        name=MODEL_NAME,
+        providers=["CPUExecutionProvider"],
+        allowed_modules=["detection", "recognition"],
+    )
     app.prepare(ctx_id=-1, det_size=DETECTION_SIZE)
     return app
 

@@ -72,6 +72,18 @@ MAX_STRUCTURE_DENSITY = 0.06
 # "outlier" any more -- the statistics would be describing the tamper itself.
 MAX_OUTLIER_FRACTION = 0.45
 
+# Fraction of pixels clipped to pure black or pure white above which the capture
+# is treated as too degraded to analyse.
+#
+# Clipping is destructive in a way darkness is not: a dim photograph can be
+# normalised back to full contrast, but pixels saturated at 255 have lost the
+# text that was there. When that happens the text mask fails, the MRZ stops
+# being excluded, and its repeated '<' fillers are reported as a cloned block on
+# a genuine document -- measured at an offset of (+104, 0), the MRZ's own
+# character pitch. Declining to analyse is the correct answer; guessing produces
+# a false accusation.
+MAX_CLIPPED_FRACTION = 0.12
+
 
 def _text_mask(gray: np.ndarray, block: int = 16) -> np.ndarray:
     """Full-resolution boolean mask, True where the pixel is in a text-dense block."""
@@ -88,6 +100,14 @@ def _text_mask(gray: np.ndarray, block: int = 16) -> np.ndarray:
     return upscaled.astype(bool)
 
 
+def clipped_fraction(gray: np.ndarray) -> float:
+    """Fraction of pixels crushed to pure black or blown out to pure white."""
+    if gray.size == 0:
+        return 1.0
+    clipped = np.count_nonzero((gray <= 2) | (gray >= 253))
+    return float(clipped / gray.size)
+
+
 def detect_copy_move(
     image: np.ndarray,
     *,
@@ -98,6 +118,22 @@ def detect_copy_move(
 ) -> ForensicsFinding:
     """Find regions duplicated from elsewhere in the same document."""
     gray = to_gray(image)
+
+    clipped = clipped_fraction(gray)
+    if clipped > MAX_CLIPPED_FRACTION:
+        return ForensicsFinding(
+            check="copy_move_detection",
+            tamper_type=None,
+            flagged=False,
+            applicable=False,
+            confidence=0.0,
+            detail=(
+                f"{clipped:.0%} of this capture is clipped to pure black or white, "
+                f"so printed text cannot be reliably located and a duplicated-region "
+                f"test would be unreliable. Recapture with more even exposure."
+            ),
+        )
+
     text = _text_mask(gray)
 
     orb = cv2.ORB_create(nfeatures=5000)

@@ -354,3 +354,87 @@ class TestCoverageHonesty:
             db=DBCrosscheckResult(performed=False),
         )
         assert "could assess this document" in verdict.recommendation
+
+    async def test_barely_examined_document_is_not_called_clear(self) -> None:
+        """A poor capture must not earn a green badge.
+
+        Measured before this guard: a document rotated 15 degrees had its MRZ,
+        noise, face and record checks all fail to run, scored 0.0 because nothing
+        found anything, and was badged CLEAR — which an officer reads as
+        "verified" when almost nothing was.
+        """
+        from app.core.risk_scoring import score_verification
+        from app.core.schemas import (
+            DBCrosscheckResult, FaceMatchResult, ForensicsResult, MRZCheckResult,
+        )
+
+        verdict = score_verification(
+            mrz=MRZCheckResult(present=False),          # unreadable
+            forensics=ForensicsResult(),                # nothing ran
+            face=FaceMatchResult(performed=False, detail="No face detected in the document"),
+            db=DBCrosscheckResult(performed=False),     # no document number
+        )
+
+        assert verdict.band.value != "clear"
+        assert verdict.score == 0.0, "no findings, so the score is genuinely zero"
+        assert "too little of this document could be verified" in verdict.recommendation
+
+    async def test_low_coverage_referral_does_not_accuse_the_traveller(self) -> None:
+        """The wording must send the officer to recapture, not to interrogate."""
+        from app.core.risk_scoring import score_verification
+        from app.core.schemas import (
+            DBCrosscheckResult, FaceMatchResult, ForensicsResult, MRZCheckResult,
+        )
+
+        verdict = score_verification(
+            mrz=MRZCheckResult(present=False),
+            forensics=ForensicsResult(),
+            face=FaceMatchResult(performed=False, detail="No face detected in the document"),
+            db=DBCrosscheckResult(performed=False),
+        )
+
+        text = verdict.recommendation.lower()
+        assert "not because anything suspicious was found" in text
+        assert "cleaner capture" in text
+        assert "secondary inspection" not in text
+
+    async def test_disabled_checks_do_not_count_as_poor_capture(self) -> None:
+        """A well-captured document must stay clear.
+
+        The noise check is disabled and face match is skipped without a live
+        capture. Counting those as coverage gaps marked every good document as
+        badly photographed.
+        """
+        from app.core.risk_scoring import score_verification
+        from app.core.schemas import (
+            CheckDigitResult, DBCrosscheckResult, FaceMatchResult, ForensicsFinding,
+            ForensicsResult, MRZCheckResult, MRZFormat,
+        )
+
+        check = CheckDigitResult(
+            field="composite", raw_value="x", expected="1", actual="1", passed=True
+        )
+        verdict = score_verification(
+            mrz=MRZCheckResult(
+                present=True, valid=True, checksum_match=True,
+                mrz_format=MRZFormat.TD3, checks=[check],
+            ),
+            forensics=ForensicsResult(
+                findings=[
+                    ForensicsFinding(
+                        check="error_level_analysis", flagged=False,
+                        confidence=0.0, detail="consistent",
+                    ),
+                    ForensicsFinding(
+                        check="noise_consistency", flagged=False, applicable=False,
+                        confidence=0.0, detail="advisory only, not calibrated",
+                    ),
+                ]
+            ),
+            face=FaceMatchResult(
+                performed=False, detail="No live capture supplied; face match not performed."
+            ),
+            db=DBCrosscheckResult(performed=True, found=True, detail="active record"),
+        )
+
+        assert verdict.band.value == "clear"

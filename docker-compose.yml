@@ -35,6 +35,12 @@ services:
     volumes:
       - ./backend:/app
       - ./data:/data:ro
+      # ML model caches, ~623 MB, downloaded on first use. Without these the
+      # models are re-fetched on every container rebuild -- painful on a slow
+      # connection and the single biggest source of "why is it downloading
+      # again" for anyone joining the project.
+      - paddle-models:/root/.paddlex
+      - insightface-models:/root/.insightface
     ports:
       - "8000:8000"
     depends_on:
@@ -66,3 +72,5 @@ services:
 
 volumes:
   pgdata:
+  paddle-models:
+  insightface-models:

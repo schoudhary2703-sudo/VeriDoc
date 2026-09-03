@@ -250,10 +250,60 @@ def _db_evidence(db: DBCrosscheckResult) -> tuple[EvidenceItem, float]:
     )
 
 
-def _band_for(score: float) -> RiskBand:
+# Checks that are unavailable by configuration rather than because of this
+# document: the noise check is disabled pending calibration, and the CNN never
+# trained. Counting them as coverage gaps would mark every document as poorly
+# captured, which is the opposite of informative.
+CONFIG_DISABLED_CHECKS = frozenset({"noise_consistency", "cnn_classifier"})
+
+
+def _coverage_ratio(evidence: list[EvidenceItem]) -> float:
+    """Fraction of *available* checks that actually assessed the document.
+
+    The denominator excludes checks that could never have run here regardless of
+    capture quality -- a disabled detector, or a face match with no live capture
+    supplied. Those are decisions the operator made, not evidence that the
+    document was photographed badly, and including them made a perfectly good
+    capture look under-verified.
+    """
+    considered = [
+        e
+        for e in evidence
+        if e.check not in CONFIG_DISABLED_CHECKS
+        and not (
+            e.check == "face_match"
+            and e.status is EvidenceStatus.NOT_APPLICABLE
+            and "no live capture" in e.detail.lower()
+        )
+    ]
+    if not considered:
+        return 1.0
+
+    assessed = sum(
+        1 for e in considered if e.status is not EvidenceStatus.NOT_APPLICABLE
+    )
+    return assessed / len(considered)
+
+
+def _band_for(score: float, evidence: list[EvidenceItem]) -> RiskBand:
+    """Map the score onto a band, but never call a barely-examined document clear.
+
+    A rotated, dark or blurred capture can leave most checks unable to run. The
+    score is then 0.0 simply because nothing found anything, and the document
+    would be badged CLEAR -- which an officer reads as "verified" when in fact
+    almost nothing was verified. Measured: a document rotated 15 degrees had its
+    MRZ, noise, face and record checks all fail to run, and still came back
+    clear.
+
+    Absence of evidence is not evidence of authenticity, so low coverage floors
+    the band at REVIEW. It never *lowers* a band -- a document with real findings
+    stays high risk.
+    """
     if score >= HIGH_RISK_THRESHOLD:
         return RiskBand.HIGH_RISK
     if score >= REVIEW_THRESHOLD:
+        return RiskBand.REVIEW
+    if _coverage_ratio(evidence) < LOW_COVERAGE_RATIO:
         return RiskBand.REVIEW
     return RiskBand.CLEAR
 
@@ -263,10 +313,10 @@ def _coverage_note(evidence: list[EvidenceItem]) -> str:
     if not evidence:
         return ""
 
-    assessed = [e for e in evidence if e.status is not EvidenceStatus.NOT_APPLICABLE]
-    ratio = len(assessed) / len(evidence)
-    if ratio >= LOW_COVERAGE_RATIO:
+    if _coverage_ratio(evidence) >= LOW_COVERAGE_RATIO:
         return ""
+
+    assessed = [e for e in evidence if e.status is not EvidenceStatus.NOT_APPLICABLE]
 
     skipped = [
         e.check.replace("_", " ")
@@ -295,6 +345,17 @@ def _recommendation(band: RiskBand, evidence: list[EvidenceItem]) -> str:
             f"Recommend secondary inspection before the traveller is cleared. "
             f"Failed checks: {phrase(failed)}.{coverage}"
         )
+    if band is RiskBand.REVIEW and not failed and not weak:
+        # Referred purely because too little could be checked, not because
+        # anything was found. Say exactly that -- the officer's next action is to
+        # recapture, not to interrogate the traveller.
+        return (
+            "Referred because too little of this document could be verified, not "
+            "because anything suspicious was found. A cleaner capture -- flatter "
+            "angle, more even lighting, whole document in frame -- would let the "
+            "remaining checks run." + coverage
+        )
+
     if band is RiskBand.REVIEW:
         parts = []
         if failed:
@@ -354,7 +415,7 @@ def score_verification(
         contributions.append(SIGNAL_WEIGHTS["expired_document"])
 
     score = _noisy_or(contributions)
-    band = _band_for(score)
+    band = _band_for(score, evidence)
 
     return Verdict(
         band=band,

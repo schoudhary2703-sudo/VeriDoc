@@ -47,12 +47,36 @@ def block_reduce(values: np.ndarray, block: int, how: str = "mean") -> np.ndarra
 def structure_density(gray: np.ndarray, block: int) -> np.ndarray:
     """Per-block density of real structure (text strokes, borders, printed rules).
 
-    The median blur is what separates structure from grain: it removes
-    salt-and-pepper style noise while leaving genuine edges intact, so heavy
-    sensor noise no longer masquerades as text.
+    Two properties this needs, both learned by measurement:
+
+    **Grain must not read as text.** The median blur removes salt-and-pepper
+    noise while leaving genuine edges intact, so a heavily grained region is not
+    mistaken for typography and excluded from its own analysis.
+
+    **The result must not depend on exposure.** Fixed Canny thresholds collapse
+    on a dark capture: at 25% brightness the detected text fraction fell from
+    0.16 to 0.04, the machine-readable zone stopped being masked, and its
+    repeated '<' fillers were reported as a cloned block on a genuine document --
+    at an offset of (+104, 0), the MRZ's own character pitch. Where text *is*
+    cannot depend on how brightly it was photographed, so contrast is normalised
+    first and the Canny thresholds are derived from the image rather than fixed.
     """
     denoised = cv2.medianBlur(gray, 5)
-    edges = cv2.Canny(denoised, 80, 200)
+
+    # Stretch to full range so a dim capture presents the same contrast as a
+    # well-lit one. CLAHE rather than a global stretch: uneven lighting across a
+    # document is common, and a global stretch leaves the shadowed half flat.
+    normalised = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8)).apply(denoised)
+
+    # Thresholds from the image's own intensity distribution (the standard
+    # median-based heuristic) rather than constants that only suit one exposure.
+    median = float(np.median(normalised))
+    lower = int(max(0, 0.66 * median))
+    upper = int(min(255, 1.33 * median))
+    if upper <= lower:
+        lower, upper = 80, 200
+
+    edges = cv2.Canny(normalised, lower, upper)
     return block_reduce(edges.astype(np.float32), block, how="mean") / 255.0
 
 
