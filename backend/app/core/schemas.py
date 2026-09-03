@@ -224,6 +224,33 @@ class FaceMatchResult(BaseModel):
     detail: str = ""
 
 
+class LivenessCue(BaseModel):
+    """One passive liveness measurement.
+
+    `suspicious` is None while the check is uncalibrated: an unfitted threshold
+    cannot say whether a value is normal, and reporting False would read as a
+    pass the module has not earned.
+    """
+
+    name: str
+    value: float
+    threshold: float
+    direction: str          # "above" or "below" the threshold is suspicious
+    suspicious: bool | None = None
+    detail: str = ""
+
+
+class LivenessResult(BaseModel):
+    """Stage 4b output: passive presentation-attack detection."""
+
+    performed: bool = False
+    calibrated: bool = False
+    # None means "not established", never "passed".
+    passed: bool | None = None
+    cues: list[LivenessCue] = Field(default_factory=list)
+    detail: str = ""
+
+
 class OCRMRZResult(BaseModel):
     """Combined output of the Phase 1 pipeline."""
 

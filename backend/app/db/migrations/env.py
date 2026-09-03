@@ -14,7 +14,7 @@ from app.config import get_settings
 from app.db.session import Base
 
 # Import models here so autogenerate can see them (none exist until Phase 4).
-# from app.models import audit_log, document, verification  # noqa: F401
+from app.models import audit_log  # noqa: F401  (registers tables on Base)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)

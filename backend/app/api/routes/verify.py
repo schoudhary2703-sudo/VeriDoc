@@ -12,10 +12,12 @@ import logging
 
 import cv2
 import numpy as np
-from fastapi import APIRouter, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.pipeline import verify_document
 from app.core.schemas import VerifyResponse
+from app.db.session import get_db
 from app.modules.audit.logger import record_verification
 
 router = APIRouter(tags=["verification"])
@@ -67,6 +69,7 @@ async def verify(
     live_face_image: UploadFile | None = File(
         None, description="Optional live capture; enables the face-match stage"
     ),
+    db: AsyncSession = Depends(get_db),
     fast: bool = Query(
         False,
         description=(
@@ -93,5 +96,5 @@ async def verify(
             detail="Verification failed while processing this document.",
         ) from None
 
-    record_verification(result)
+    await record_verification(db, result)
     return result

@@ -13,10 +13,28 @@ from pathlib import Path
 import httpx
 import pytest
 
+from app.db.session import get_db, get_engine
 from app.main import app
-from app.modules.audit import logger as audit_logger
+from app.models.audit_log import Verification  # noqa: F401  (registers the tables)
+from app.db.session import Base
 
 SAMPLES = Path(__file__).resolve().parents[2] / "data" / "samples"
+
+
+@pytest.fixture(autouse=True)
+async def audit_tables():
+    """Create the audit schema for the test database, then empty it.
+
+    Tests run against whatever DATABASE_URL is configured -- SQLite locally,
+    Postgres in the container -- so the schema is created rather than assumed.
+    """
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with engine.begin() as conn:
+        for table in reversed(Base.metadata.sorted_tables):
+            await conn.execute(table.delete())
 
 
 @pytest.fixture
@@ -160,7 +178,6 @@ class TestVerifyContract:
 
 class TestAuditLog:
     async def test_verification_is_recorded(self, client: httpx.AsyncClient) -> None:
-        audit_logger.clear()
         resp = await client.post(
             "/api/verify",
             files={
@@ -177,7 +194,6 @@ class TestAuditLog:
         assert any(e["verification_id"] == verification_id for e in log.json())
 
     async def test_officer_decision_is_attached(self, client: httpx.AsyncClient) -> None:
-        audit_logger.clear()
         resp = await client.post(
             "/api/verify",
             files={
@@ -208,7 +224,6 @@ class TestAuditLog:
 
     async def test_audit_log_stores_no_images(self, client: httpx.AsyncClient) -> None:
         """An audit trail that accumulates travellers' photographs is a liability."""
-        audit_logger.clear()
         await client.post(
             "/api/verify",
             files={
@@ -222,3 +237,69 @@ class TestAuditLog:
         assert not any(
             key in entry for key in ("image", "document_image", "photo", "face")
         )
+
+    async def test_the_verification_row_is_never_modified(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """A decision is appended alongside the verification, not written over it.
+
+        An audit trail whose rows are edited cannot answer the question it exists
+        for: what did the system recommend, and what did the human do about it.
+        """
+        resp = await client.post(
+            "/api/verify",
+            files={
+                "document_image": (
+                    "genuine.png", _sample("specimen_passport_genuine.png"), "image/png"
+                )
+            },
+            params={"fast": "true"},
+        )
+        body = resp.json()
+        verification_id = body["verification_id"]
+        original_band = body["verdict"]["band"]
+        original_score = body["verdict"]["score"]
+
+        await client.post(
+            f"/api/audit-log/{verification_id}/decision",
+            json={"action": "referred", "officer_id": "BSF-2291"},
+        )
+
+        entry = next(
+            e
+            for e in (await client.get("/api/audit-log")).json()
+            if e["verification_id"] == verification_id
+        )
+        # The machine's findings are untouched by the human's decision.
+        assert entry["band"] == original_band
+        assert entry["score"] == original_score
+        assert entry["officer_action"] == "referred"
+
+    async def test_decisions_accumulate_rather_than_replace(
+        self, client: httpx.AsyncClient
+    ) -> None:
+        """An escalation after a referral must not erase the referral."""
+        resp = await client.post(
+            "/api/verify",
+            files={
+                "document_image": (
+                    "genuine.png", _sample("specimen_passport_genuine.png"), "image/png"
+                )
+            },
+            params={"fast": "true"},
+        )
+        verification_id = resp.json()["verification_id"]
+
+        for action in ("referred", "escalated"):
+            await client.post(
+                f"/api/audit-log/{verification_id}/decision",
+                json={"action": action, "officer_id": "BSF-2291"},
+            )
+
+        entry = next(
+            e
+            for e in (await client.get("/api/audit-log")).json()
+            if e["verification_id"] == verification_id
+        )
+        assert [d["action"] for d in entry["decisions"]] == ["referred", "escalated"]
+        assert entry["officer_action"] == "escalated"

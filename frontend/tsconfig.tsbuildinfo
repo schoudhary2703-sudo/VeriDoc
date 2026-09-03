@@ -1,1 +1,0 @@
-{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/components/documentupload.tsx","./src/components/evidencepanel.tsx","./src/components/livecameracapture.tsx","./src/components/riskbadge.tsx","./src/pages/auditlog.tsx","./src/pages/verifydocument.tsx","./src/types/health.ts","./src/types/verification.ts"],"version":"5.9.3"}

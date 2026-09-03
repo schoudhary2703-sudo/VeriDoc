@@ -1,17 +1,79 @@
 @import "tailwindcss";
 
-/* The officer console is dark by default: checkpoint booths are dim, and a
-   bright panel at 3am is a real complaint from people who work these shifts. */
+/* ---------------------------------------------------------------------------
+ * Design tokens taken from the team's Verify Screen mockup.
+ *
+ * The palette is remapped onto Tailwind's existing scale names rather than
+ * introduced as new ones. Every component already reads `slate-*`, `sky-*` and
+ * `emerald-*`, so redefining those tokens converges the whole console on the
+ * design in one place — and keeps a future re-skin to this file instead of
+ * thirty class-name edits.
+ *
+ * The palette is a cool navy rather than Tailwind's warmer slate: checkpoint
+ * booths are dim, and the mockup's ground (#06101F) is markedly darker than
+ * slate-950, which is what makes the status colours read at a glance.
+ * ------------------------------------------------------------------------- */
+@theme {
+  /* Ground and panels */
+  --color-slate-950: #06101f;
+  --color-slate-900: #0e151d;
+  --color-slate-850: #101820;
+  --color-slate-800: #1c2836;
+  --color-slate-700: #2a3a4c;
+
+  /* Text, brightest to most muted */
+  --color-slate-600: #6f8ba8;
+  --color-slate-500: #8698ac;
+  --color-slate-400: #9aabbd;
+  --color-slate-300: #b4c3d4;
+  --color-slate-200: #dce4ed;
+  --color-slate-100: #e8eef5;
+
+  /* Accent — actions and links */
+  --color-sky-700: #2f6fd8;
+  --color-sky-600: #4c8dff;
+  --color-sky-500: #6fa5ff;
+  --color-sky-400: #8ab8ff;
+
+  /* Pass */
+  --color-emerald-600: #2aa876;
+  --color-emerald-500: #35c88a;
+  --color-emerald-400: #4bd69b;
+  --color-emerald-300: #7ce3ba;
+
+  /* Weak / borderline */
+  --color-amber-600: #c98a24;
+  --color-amber-500: #e0a63a;
+  --color-amber-400: #f0be5c;
+  --color-amber-300: #f7d189;
+
+  /* Fail */
+  --color-red-600: #d24b4b;
+  --color-red-500: #e26060;
+  --color-red-400: #f08080;
+  --color-red-300: #f7a5a5;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+
+/* Inter and IBM Plex Mono, matching the mockup. Both degrade to the system
+   stacks above if the fonts are unavailable — a checkpoint terminal may well be
+   offline, and the console must stay legible when they fail to load. */
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap");
+
 html {
   color-scheme: dark;
 }
 
 body {
   margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-slate-950);
   -webkit-font-smoothing: antialiased;
 }
 
-/* Utility used by the evidence panel to keep collapsed rows to two lines. */
+/* Keeps collapsed evidence rows to two lines. */
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;

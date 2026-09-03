@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ApiError, submitDecision, verifyDocument } from "../api/client";
+import CaseHeader from "../components/CaseHeader";
 import DocumentUpload from "../components/DocumentUpload";
 import EvidencePanel from "../components/EvidencePanel";
 import LiveCameraCapture from "../components/LiveCameraCapture";
@@ -162,6 +163,16 @@ export default function VerifyDocument() {
     }
   };
 
+  const reset = () => {
+    setDocumentFile(null);
+    setFaceBlob(null);
+    setResult(null);
+    setError(null);
+    setNote("");
+    setDecision(null);
+    setDecisionError(null);
+  };
+
   const decide = async (action: OfficerAction) => {
     if (!result) return;
     setDecisionError(null);
@@ -176,7 +187,14 @@ export default function VerifyDocument() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
+    <>
+      <CaseHeader
+        result={result}
+        running={running}
+        hasDocument={documentFile !== null}
+        onReset={reset}
+      />
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,380px)_minmax(0,1fr)]">
       {/* Capture column */}
       <div className="space-y-5">
         <section className="rounded-xl border border-slate-800 bg-slate-900/40 p-5">
@@ -343,5 +361,6 @@ export default function VerifyDocument() {
         )}
       </div>
     </div>
+    </>
   );
 }
