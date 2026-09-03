@@ -33,6 +33,20 @@ FILLER = "<"
 _WEIGHTS = (7, 3, 1)
 _VALID_CHARS = re.compile(r"^[A-Z0-9<]+$")
 
+# Characters OCR commonly returns in place of the MRZ filler '<'.
+#
+# Recognizers trained on multilingual corpora will happily read a run of angle
+# brackets as hiragana: PP-OCRv5 returns U+304F (ku) for '<' at 0.96 confidence,
+# because the glyphs are near-identical at MRZ sizes. The MRZ alphabet is
+# strictly A-Z, 0-9 and '<', so any other character in this context is an OCR
+# error by definition. Normalising them is safe because the check digits then
+# validate the result -- a wrong substitution fails the checksum rather than
+# passing silently.
+_FILLER_CONFUSABLES = "くク〈＜‹«˂ᐸ≺＞"
+_FILLER_TRANSLATION = str.maketrans(
+    {ord(ch): FILLER for ch in _FILLER_CONFUSABLES}
+)
+
 # Line lengths that identify each layout.
 _LAYOUTS: dict[MRZFormat, tuple[int, int]] = {
     MRZFormat.TD1: (3, 30),
@@ -123,10 +137,10 @@ def _parse_names(value: str) -> tuple[str | None, str | None]:
 
 
 def _normalize_lines(text: str) -> list[str]:
-    """Extract candidate MRZ lines from raw OCR text."""
+    """Extract candidate MRZ lines from raw OCR text, repairing filler glyphs."""
     lines: list[str] = []
     for raw in text.replace("\r", "\n").split("\n"):
-        line = raw.strip().upper().replace(" ", "")
+        line = raw.strip().upper().replace(" ", "").translate(_FILLER_TRANSLATION)
         if line:
             lines.append(line)
     return lines

@@ -115,11 +115,16 @@ def estimate_skew_angle(image: np.ndarray) -> float:
     lines = cv2.HoughLinesP(
         thresh, 1, np.pi / 180, threshold=100, minLineLength=image.shape[1] // 3, maxLineGap=20
     )
-    if lines is None:
+    if lines is None or len(lines) == 0:
         return 0.0
 
+    # OpenCV returns (N, 1, 4) on 4.x and (N, 4) on 5.x. Normalise both to (N, 4)
+    # rather than indexing one shape and crashing on the other -- installing
+    # InsightFace pulled in a second OpenCV build and silently changed this.
+    segments = np.asarray(lines).reshape(-1, 4)
+
     angles = []
-    for x1, y1, x2, y2 in lines[:, 0]:
+    for x1, y1, x2, y2 in segments:
         angle = np.degrees(np.arctan2(y2 - y1, x2 - x1))
         # Only near-horizontal lines describe text baselines.
         if -45 < angle < 45:

@@ -27,6 +27,23 @@ paddlepaddle==3.3.1
 paddleocr==3.7.0
 # pytesseract==0.3.13     # fallback; also needs the tesseract binary on PATH
 
-# ---- Later phases (kept out of the image until needed) ----
-# Phase 2: torch, timm, scikit-image
-# Phase 3: insightface, onnxruntime
+# ---- Phase 2: forensics ----
+# torch/timm are pulled in for the CNN, which currently ships DISABLED after
+# three failed training runs (see docs/FORENSICS_CNN_ATTEMPTS.md). The classical
+# detectors need only opencv and numpy.
+torch==2.13.0
+timm==1.0.29
+scikit-image==0.26.0
+
+# ---- Phase 3: face matching ----
+# buffalo_l weights (~281 MB) download on first use to ~/.insightface.
+insightface==1.0.1
+onnxruntime==1.29.0
+
+# WARNING: insightface depends on `opencv-python`, which installs a `cv2` module
+# that collides with `opencv-python-headless` above -- both write the same
+# package. Installing insightface changed the resolved cv2 build and altered
+# HoughLinesP's return shape from (N, 1, 4) to (N, 4), silently breaking
+# preprocessing until normalize.estimate_skew_angle was made shape-agnostic.
+# Keep only one opencv distribution per environment where possible, and treat
+# any cv2 return-shape assumption as version-dependent.

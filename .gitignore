@@ -28,6 +28,7 @@ backend/ml/checkpoints/
 # Datasets — never commit bulk or real data
 data/raw/
 data/synthetic/
+data/processed/
 !data/samples/
 
 # OS / editor

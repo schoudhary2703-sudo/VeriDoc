@@ -1,1 +1,20 @@
 @import "tailwindcss";
+
+/* The officer console is dark by default: checkpoint booths are dim, and a
+   bright panel at 3am is a real complaint from people who work these shifts. */
+html {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Utility used by the evidence panel to keep collapsed rows to two lines. */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

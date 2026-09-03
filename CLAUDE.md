@@ -30,6 +30,24 @@ starting Phases 2 or 3. It changes the plan in four ways worth knowing up front:
   and every public anti-spoofing dataset is **research-licensed only**. Say so
   in the README and the submission; do not imply a commercially deployable model.
 
+## Phase 2 outcome — read before touching forensics
+
+The classical detectors ship; **the learned CNN does not**. Three training
+configurations were tried against FantasyID's held-out split and all scored at or
+below chance -- see [docs/FORENSICS_CNN_ATTEMPTS.md](docs/FORENSICS_CNN_ATTEMPTS.md)
+for the numbers and the measured diagnosis of each. `CHECK_WEIGHTS["cnn_classifier"]`
+is `0.0` and no checkpoint sits at the production path, so the engine degrades to
+the explainable checks. Do not re-run those configurations without more data, a
+GPU, or a frequency-domain (DCT) approach.
+
+Honest headline numbers for the classical engine, on genuinely held-out data:
+**0% false positives on 150 genuine documents, 46% detection on face swaps, 6%
+on text manipulation, 26% overall.** Face-swap detection comes from two
+orthogonal signals -- the classical checks (29% alone) plus the Phase 3
+intra-document face consistency check. Quote those, not the synthetic smoke-test figures in
+[docs/FORENSICS_RESULTS.md](docs/FORENSICS_RESULTS.md), whose thresholds were
+fitted on the very images they score.
+
 ## Naming
 
 `BUILD_PLAN.md` was written with the working title *DocSentry*. The project is

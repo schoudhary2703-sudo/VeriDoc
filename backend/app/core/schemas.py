@@ -181,6 +181,13 @@ class ForensicsFinding(BaseModel):
     detail: str
     regions: list[Region] = Field(default_factory=list)
 
+    # False when the check could not run on this document at all -- a single-
+    # portrait card for the face cross-check, an image too small for block
+    # analysis. A test that could not run is not evidence of authenticity, and
+    # must not dilute the checks that did run, so the score normalises over
+    # applicable checks only.
+    applicable: bool = True
+
 
 class ForensicsResult(BaseModel):
     """Combined output of the forensics engine (stage 3)."""
@@ -204,6 +211,19 @@ class ForensicsResult(BaseModel):
         return f"Tamper indicators: {names}"
 
 
+class FaceMatchResult(BaseModel):
+    """Stage 4 output: document photo compared against a live capture."""
+
+    performed: bool = False
+    match_score: float | None = None
+    matched: bool | None = None
+    threshold: float | None = None
+    faces_in_document: int = 0
+    faces_in_capture: int = 0
+    liveness_passed: bool | None = None
+    detail: str = ""
+
+
 class OCRMRZResult(BaseModel):
     """Combined output of the Phase 1 pipeline."""
 
@@ -211,3 +231,88 @@ class OCRMRZResult(BaseModel):
     mrz_check: MRZCheckResult = Field(default_factory=MRZCheckResult)
     ocr: OCRResult | None = None
     processing_time_ms: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Verification response contract (BUILD_PLAN Section 5)
+#
+# Extended beyond the original spec in one respect: evidence carries a
+# four-state status rather than a boolean `passed`. The officer dashboard needs
+# to distinguish "this check failed" from "this check is borderline" from "this
+# check could not run on this document", and collapsing those three into
+# passed=false would either overstate a weak signal or hide a missing one.
+# ---------------------------------------------------------------------------
+
+
+class EvidenceStatus(str, Enum):
+    PASS = "pass"
+    WEAK = "weak"
+    FAIL = "fail"
+    NOT_APPLICABLE = "not_applicable"
+
+
+class RiskBand(str, Enum):
+    CLEAR = "clear"
+    REVIEW = "review"
+    HIGH_RISK = "high_risk"
+
+
+class EvidenceItem(BaseModel):
+    """One line in the officer's evidence panel."""
+
+    stage: str          # preprocessing | ocr_mrz | forensics | face | db_crosscheck
+    check: str
+    status: EvidenceStatus
+    detail: str
+    confidence: float = Field(ge=0.0, le=1.0, default=0.0)
+    regions: list[Region] = Field(default_factory=list)
+
+    @property
+    def passed(self) -> bool:
+        """Back-compatibility with the original boolean contract."""
+        return self.status is EvidenceStatus.PASS
+
+
+class DBCrosscheckResult(BaseModel):
+    """Stage 5 output.
+
+    `source` is deliberately explicit. This prototype queries a seeded local
+    table, never a live watchlist, and the UI must say so rather than implying a
+    connection to Interpol SLTD or a national lookout system.
+    """
+
+    performed: bool = False
+    found: bool = False
+    blacklisted: bool = False
+    status: str | None = None
+    source: str = "simulated local record set (no live watchlist access)"
+    detail: str = ""
+
+
+class Verdict(BaseModel):
+    band: RiskBand
+    score: float = Field(ge=0.0, le=1.0)
+    recommendation: str
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+
+    @property
+    def failed(self) -> list[EvidenceItem]:
+        return [e for e in self.evidence if e.status is EvidenceStatus.FAIL]
+
+    @property
+    def weak(self) -> list[EvidenceItem]:
+        return [e for e in self.evidence if e.status is EvidenceStatus.WEAK]
+
+
+class VerifyResponse(BaseModel):
+    """The complete `POST /api/verify` response."""
+
+    verification_id: str
+    verdict: Verdict
+    extracted_fields: ExtractedFields = Field(default_factory=ExtractedFields)
+    mrz_check: MRZCheckResult = Field(default_factory=MRZCheckResult)
+    forensics: ForensicsResult = Field(default_factory=ForensicsResult)
+    face_match: FaceMatchResult = Field(default_factory=FaceMatchResult)
+    db_crosscheck: DBCrosscheckResult = Field(default_factory=DBCrosscheckResult)
+    processing_time_ms: int = 0
+    stage_timings_ms: dict[str, int] = Field(default_factory=dict)

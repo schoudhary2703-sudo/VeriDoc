@@ -222,6 +222,7 @@ def detect_splice(
             check="noise_consistency",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Image too small for block-level noise analysis",
         )
@@ -236,6 +237,7 @@ def detect_splice(
             check="noise_consistency",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail="Document is too text-dense to measure a reliable noise floor",
         )
@@ -271,10 +273,15 @@ def detect_splice(
     confidence = float(np.clip((peak - z_threshold) / 8.0, 0.0, 1.0))
 
     if not NOISE_DETECTOR_VALIDATED:
+        # applicable=False, not flagged=False. An uncalibrated check has not
+        # examined this document and passed it -- it has not meaningfully run at
+        # all, and the officer console renders that as "not applicable" rather
+        # than as a green tick it has not earned.
         return ForensicsFinding(
             check="noise_consistency",
             tamper_type=None,
             flagged=False,
+            applicable=False,
             confidence=0.0,
             detail=(
                 f"Advisory only: {len(regions)} region(s) deviate from the document noise "

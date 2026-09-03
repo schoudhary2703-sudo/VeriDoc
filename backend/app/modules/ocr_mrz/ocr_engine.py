@@ -11,6 +11,7 @@ on a machine where no OCR backend is installed.
 
 from __future__ import annotations
 
+import functools
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -63,26 +64,31 @@ class PaddleOCREngine(OCREngine):
 
     # Measured on a cropped MRZ band (CPU, oneDNN disabled):
     #
-    #   PP-OCRv6_medium   17.9 s   MRZ checksum valid
-    #   PP-OCRv5_server    9.4 s   MRZ checksum valid   <- default
-    #   PP-OCRv5_mobile    3.8 s   MRZ checksum FAILS
+    #   PP-OCRv5_server   195 s    correct
+    #   PP-OCRv5_mobile     2.8 s  correct once filler glyphs are normalised
     #
-    # Mobile is the fastest by far and misreads a character, which the ICAO
-    # checksum then rejects -- a fast wrong answer on a border checkpoint is
-    # worse than a slower right one, so it is not the default. It stays
-    # selectable for latency experiments.
-    DEFAULT_DET_MODEL = "PP-OCRv5_server_det"
-    DEFAULT_REC_MODEL = "PP-OCRv5_server_rec"
-    FAST_DET_MODEL = "PP-OCRv5_mobile_det"
-    FAST_REC_MODEL = "PP-OCRv5_mobile_rec"
+    # The mobile model is the default. It initially looked wrong -- it returned
+    # hiragana U+304F for the MRZ filler '<', because the glyphs are nearly
+    # identical at MRZ sizes -- but the reading was otherwise perfect at 0.96
+    # confidence. Since the MRZ alphabet is strictly A-Z, 0-9 and '<', that is a
+    # character-set error rather than a recognition error, and the parser now
+    # repairs it (see _FILLER_CONFUSABLES in mrz_parser). The check digits still
+    # validate the result, so a bad repair fails loudly rather than passing.
+    #
+    # The server model is 70x slower for no accuracy gain on this task and is
+    # kept only as a fallback.
+    DEFAULT_DET_MODEL = "PP-OCRv5_mobile_det"
+    DEFAULT_REC_MODEL = "PP-OCRv5_mobile_rec"
+    ACCURATE_DET_MODEL = "PP-OCRv5_server_det"
+    ACCURATE_REC_MODEL = "PP-OCRv5_server_rec"
 
-    def __init__(self, lang: str = "en", *, fast: bool = False) -> None:
+    def __init__(self, lang: str = "en", *, accurate: bool = False) -> None:
         if not self.is_available():
             raise OCREngineError("paddleocr is not installed")
         from paddleocr import PaddleOCR
 
-        det = self.FAST_DET_MODEL if fast else self.DEFAULT_DET_MODEL
-        rec = self.FAST_REC_MODEL if fast else self.DEFAULT_REC_MODEL
+        det = self.ACCURATE_DET_MODEL if accurate else self.DEFAULT_DET_MODEL
+        rec = self.ACCURATE_REC_MODEL if accurate else self.DEFAULT_REC_MODEL
 
         # oneDNN is disabled deliberately. paddlepaddle 3.3.1's oneDNN CPU kernels
         # raise NotImplementedError on the PP-OCR detection graph
@@ -94,6 +100,11 @@ class PaddleOCREngine(OCREngine):
                 use_textline_orientation=False,
                 lang=lang,
                 enable_mkldnn=False,
+                # We already deskew and crop in stage 1, so PaddleOCR's own
+                # document orientation and dewarping models are redundant work
+                # on every call.
+                use_doc_orientation_classify=False,
+                use_doc_unwarping=False,
                 text_detection_model_name=det,
                 text_recognition_model_name=rec,
             )
@@ -216,8 +227,14 @@ def available_engines() -> list[str]:
     ]
 
 
+@functools.lru_cache(maxsize=4)
 def get_engine(preferred: str | None = None) -> OCREngine:
     """Return an OCR engine, preferring PaddleOCR then falling back to Tesseract.
+
+    Cached per backend. Constructing PaddleOCR loads several ONNX graphs and
+    takes about 14 seconds, so building one per request made every API call pay
+    the model-load cost -- which is most of the latency an officer would see.
+    The engines are stateless across calls, so sharing one is safe.
 
     Pass `preferred` to force a specific backend -- useful for benchmarking one
     against the other on the same sample set in Phase 7.

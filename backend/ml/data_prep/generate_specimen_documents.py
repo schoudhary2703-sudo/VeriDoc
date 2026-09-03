@@ -20,6 +20,8 @@ import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import cv2
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 # Import path assumes the backend package root is importable.
@@ -263,10 +265,21 @@ def main() -> None:
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
+    # Every specimen is written as a *simulated capture*, not as a pristine
+    # render. A border system receives a photographed or scanned document, and
+    # the forensic checks are calibrated against that: a clean PNG render has no
+    # sensor noise and no compression history, so its error-level statistics are
+    # degenerate and the genuine control gets flagged. Saving what the system
+    # will actually be given keeps the demo honest in both directions.
+    from ml.data_prep.generate_synthetic_forgeries import simulate_capture
+
     specimens = build_specimens()
     for spec in specimens:
-        image = render_specimen(spec)
-        image.save(args.out / spec.filename)
+        rendered = render_specimen(spec)
+        captured = simulate_capture(
+            cv2.cvtColor(np.array(rendered), cv2.COLOR_RGB2BGR)
+        )
+        cv2.imwrite(str(args.out / spec.filename), captured)
         print(f"wrote {args.out / spec.filename}  [{spec.label}]")
 
     manifest = args.out / "manifest.json"

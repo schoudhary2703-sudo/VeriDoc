@@ -1,66 +1,56 @@
 import { useEffect, useState } from "react";
 import { getHealth } from "./api/client";
+import AuditLog from "./pages/AuditLog";
+import VerifyDocument from "./pages/VerifyDocument";
 import type { HealthResponse } from "./types/health";
+
+type Page = "verify" | "audit";
 
 type ConnState =
   | { kind: "checking" }
   | { kind: "connected"; health: HealthResponse }
   | { kind: "error"; message: string };
 
-const POLL_MS = 5000;
+const POLL_MS = 15_000;
 
-function StatusDot({ ok }: { ok: boolean }) {
-  return (
-    <span
-      className={`inline-block h-2.5 w-2.5 rounded-full ${
-        ok ? "bg-emerald-500" : "bg-red-500"
-      }`}
-    />
-  );
-}
-
-function BackendStatus({ state }: { state: ConnState }) {
+function ConnectionPill({ state }: { state: ConnState }) {
   if (state.kind === "checking") {
     return (
-      <div className="flex items-center gap-2 text-slate-400">
-        <span className="inline-block h-2.5 w-2.5 animate-pulse rounded-full bg-amber-400" />
-        <span className="text-sm">backend: checking…</span>
-      </div>
+      <span className="flex items-center gap-2 text-xs text-slate-500">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-amber-400" />
+        connecting…
+      </span>
     );
   }
 
   if (state.kind === "error") {
     return (
-      <div className="flex items-center gap-2 text-red-400">
-        <StatusDot ok={false} />
-        <span className="text-sm">backend: disconnected — {state.message}</span>
-      </div>
+      <span
+        className="flex items-center gap-2 text-xs text-red-400"
+        title={state.message}
+      >
+        <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+        backend unreachable
+      </span>
     );
   }
 
-  const { dependencies } = state.health;
+  const deps = state.health.dependencies;
+  const degraded = Object.values(deps).filter((v) => v !== "ok").length;
+
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 text-emerald-400">
-        <StatusDot ok />
-        <span className="text-sm font-medium">backend: connected</span>
-      </div>
-      <div className="flex gap-4 pl-[18px] text-xs text-slate-400">
-        <span className="flex items-center gap-1.5">
-          <StatusDot ok={dependencies.database === "ok"} />
-          postgres {dependencies.database === "ok" ? "" : `(${dependencies.database})`}
-        </span>
-        <span className="flex items-center gap-1.5">
-          <StatusDot ok={dependencies.redis === "ok"} />
-          redis {dependencies.redis === "ok" ? "" : `(${dependencies.redis})`}
-        </span>
-      </div>
-    </div>
+    <span className="flex items-center gap-2 text-xs text-slate-400">
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${degraded ? "bg-amber-400" : "bg-emerald-400"}`}
+      />
+      {degraded ? `${degraded} dependency degraded` : "all engines online"}
+    </span>
   );
 }
 
 export default function App() {
-  const [state, setState] = useState<ConnState>({ kind: "checking" });
+  const [page, setPage] = useState<Page>("verify");
+  const [conn, setConn] = useState<ConnState>({ kind: "checking" });
 
   useEffect(() => {
     let cancelled = false;
@@ -68,15 +58,14 @@ export default function App() {
     const check = async () => {
       try {
         const health = await getHealth();
-        if (!cancelled) setState({ kind: "connected", health });
+        if (!cancelled) setConn({ kind: "connected", health });
       } catch (err) {
-        if (!cancelled) {
-          setState({ kind: "error", message: (err as Error).message });
-        }
+        if (!cancelled)
+          setConn({ kind: "error", message: (err as Error).message });
       }
     };
 
-    check();
+    void check();
     const id = setInterval(check, POLL_MS);
     return () => {
       cancelled = true;
@@ -84,33 +73,60 @@ export default function App() {
     };
   }, []);
 
+  const tabs: { id: Page; label: string }[] = [
+    { id: "verify", label: "Verify" },
+    { id: "audit", label: "Audit log" },
+  ];
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-3xl px-6 py-16">
-        <header className="mb-10">
-          <h1 className="text-3xl font-semibold tracking-tight">VeriDoc</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            AI-based fake identity &amp; document screening — SIH26188
-          </p>
-        </header>
+      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/85 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-3 px-6 py-3">
+          <div className="flex items-baseline gap-2.5">
+            <span className="flex h-6 w-6 items-center justify-center rounded bg-sky-600 text-sm font-bold text-white">
+              V
+            </span>
+            <span className="text-base font-semibold tracking-tight">VeriDoc</span>
+            <span className="text-xs text-slate-500">SIH26188 · MHA</span>
+          </div>
 
-        <section className="rounded-lg border border-slate-800 bg-slate-900/50 p-5">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
-            System status
-          </h2>
-          <BackendStatus state={state} />
-        </section>
+          <nav className="flex gap-1">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setPage(tab.id)}
+                className={`rounded-lg px-3 py-1.5 text-sm transition ${
+                  page === tab.id
+                    ? "bg-slate-800 text-slate-100"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
 
-        <section className="mt-6 rounded-lg border border-slate-800 bg-slate-900/50 p-5">
-          <h2 className="mb-3 text-xs font-medium uppercase tracking-wider text-slate-500">
-            Pipeline
-          </h2>
-          <p className="text-sm text-slate-400">
-            Verification modules are not built yet — Phase 0 scaffolding only. The
-            officer dashboard arrives in Phase 5.
-          </p>
-        </section>
-      </div>
+          <div className="ml-auto flex items-center gap-5">
+            <ConnectionPill state={conn} />
+            <span className="text-xs text-slate-500">
+              Insp. R. Nair · <span className="text-slate-600">BSF-2291</span>
+            </span>
+          </div>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-7xl px-6 py-7">
+        {page === "verify" ? <VerifyDocument /> : <AuditLog />}
+      </main>
+
+      <footer className="mx-auto max-w-7xl px-6 pb-8">
+        <p className="text-xs leading-relaxed text-slate-600">
+          Decision support for a human officer. VeriDoc never accepts or rejects a
+          traveller on its own. Record cross-checks run against a simulated local
+          record set — this prototype has no connection to any live watchlist.
+        </p>
+      </footer>
     </div>
   );
 }

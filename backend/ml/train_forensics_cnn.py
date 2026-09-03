@@ -125,6 +125,17 @@ def main() -> None:
         "--max-per-class", type=int, default=0,
         help="Cap samples per class (0 = all). Use for a fast pipeline smoke test.",
     )
+    parser.add_argument(
+        "--val-data", type=Path, default=None,
+        help="Explicit validation directory (imagefolder mode). Without it the "
+             "training directory is randomly split, which leaks template identity "
+             "when the two sets come from the same documents.",
+    )
+    parser.add_argument(
+        "--freeze-blocks", type=int, default=0,
+        help="Freeze the stem and the first N backbone blocks. With ~2.5k samples "
+             "fine-tuning all 5M parameters memorises the training set.",
+    )
     parser.add_argument("--out", type=Path, default=Path("./ml/checkpoints/forensics_cnn.pt"))
     parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=16)
@@ -174,14 +185,21 @@ def main() -> None:
         print(f"classes: {labels}")
         print(f"images : {len(full)}  {Counter(t for _, t in full.samples)}")
 
-        val_size = int(len(full) * args.val_split)
-        train_set, val_set = random_split(
-            full, [len(full) - val_size, val_size],
-            generator=torch.Generator().manual_seed(args.seed),
-        )
-        val_set.dataset = ImageFolder(
-            str(args.data), transform=build_transforms(False, args.input_size)
-        )
+        if args.val_data is not None:
+            train_set = full
+            val_set = ImageFolder(
+                str(args.val_data), transform=build_transforms(False, args.input_size)
+            )
+            print(f"val    : {len(val_set)}  {Counter(t for _, t in val_set.samples)}")
+        else:
+            val_size = int(len(full) * args.val_split)
+            train_set, val_set = random_split(
+                full, [len(full) - val_size, val_size],
+                generator=torch.Generator().manual_seed(args.seed),
+            )
+            val_set.dataset = ImageFolder(
+                str(args.data), transform=build_transforms(False, args.input_size)
+            )
         counts = Counter(t for _, t in full.samples)
 
     train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True)
@@ -192,6 +210,25 @@ def main() -> None:
 
     model = timm.create_model(MODEL_NAME, pretrained=True, num_classes=len(labels)).to(device)
 
+    if args.freeze_blocks:
+        frozen = 0
+        for name, param in model.named_parameters():
+            if name.startswith(("conv_stem", "bn1")):
+                param.requires_grad = False
+                frozen += param.numel()
+            elif name.startswith("blocks."):
+                block_index = int(name.split(".")[1])
+                if block_index < args.freeze_blocks:
+                    param.requires_grad = False
+                    frozen += param.numel()
+        total_params = sum(p.numel() for p in model.parameters())
+        print(
+            f"frozen : stem + blocks[:{args.freeze_blocks}]  "
+            f"{frozen:,}/{total_params:,} params ({frozen/total_params:.0%})"
+        )
+
+    trainable = [p for p in model.parameters() if p.requires_grad]
+
     # Class weights counter the imbalance between genuine and each tamper type.
     total = sum(counts.values())
     weights = torch.tensor(
@@ -200,7 +237,7 @@ def main() -> None:
     ).to(device)
 
     criterion = nn.CrossEntropyLoss(weight=weights)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(trainable, lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs)
 
     best_macro_f1 = 0.0
