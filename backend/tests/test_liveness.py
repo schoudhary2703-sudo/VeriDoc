@@ -35,6 +35,17 @@ def _blur_and_flatten(face: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(np.clip(lab, 0, 255).astype(np.uint8), cv2.COLOR_LAB2BGR)
 
 
+def _screen_grid(face: np.ndarray, period: float = 4.0) -> np.ndarray:
+    """Stands in for a replay: a periodic display grid beating against the sensor.
+
+    A real face has no such regular structure; a re-photographed screen does.
+    """
+    h, w = face.shape[:2]
+    yy, xx = np.mgrid[0:h, 0:w]
+    grid = 12 * np.sin(2 * np.pi * xx / period) + 12 * np.sin(2 * np.pi * yy / period)
+    return np.clip(face.astype(np.float32) + grid[:, :, None], 0, 255).astype(np.uint8)
+
+
 class TestUncalibratedByDefault:
     def test_module_declares_itself_uncalibrated(self) -> None:
         assert liveness.LIVENESS_CALIBRATED is False
@@ -74,6 +85,26 @@ class TestCueMechanics:
     def test_cues_are_deterministic(self) -> None:
         face = _synthetic_face(7)
         assert liveness.micro_texture_energy(face) == liveness.micro_texture_energy(face)
+
+    def test_moire_responds_to_a_screen_grid(self) -> None:
+        """The cue must fire on the periodic pattern it exists to catch."""
+        face = _synthetic_face()
+        assert liveness.moire_interference(_screen_grid(face)) > liveness.moire_interference(face)
+
+    def test_moire_is_not_confounded_by_blur(self) -> None:
+        """The confound this rework fixes: a soft print must NOT out-score a screen.
+
+        The previous implementation measured spectral falloff, so a blurred print
+        scored higher than an actual screen replay. After subtracting the isotropic
+        radial background the cue is blur-invariant, so a screen grid must win and
+        blur must not lift the cue above the live baseline.
+        """
+        face = _synthetic_face()
+        live = liveness.moire_interference(face)
+        blurred = liveness.moire_interference(_blur_and_flatten(face))
+        screen = liveness.moire_interference(_screen_grid(face))
+        assert screen > blurred, "screen replay must out-score a blurred print"
+        assert blurred <= live + 0.05, "blur must not inflate the moire cue"
 
     def test_cue_values_are_finite(self) -> None:
         for cue in liveness.measure(_synthetic_face()).cues:

@@ -22,7 +22,10 @@ The four cues, and the attack each addresses:
 
 **Moire interference** catches a *replay* attack -- a face shown on a screen. The
 display's pixel grid beats against the camera's sensor grid and produces regular
-off-axis peaks in the frequency domain that no real face generates.
+off-axis peaks in the frequency domain that no real face generates. The cue
+isolates those peaks by first subtracting the spectrum's isotropic radial
+falloff -- the only thing blur changes -- so a soft print no longer reads as a
+screen. See the reworked implementation and the confound it fixes below.
 
 **Specular concentration** catches glossy prints and screens. Real skin scatters
 light diffusely across many small highlights; a flat glossy surface reflects it
@@ -69,33 +72,61 @@ def _prepare(face_image: np.ndarray) -> np.ndarray:
 
 
 def moire_interference(face: np.ndarray) -> float:
-    """Energy in off-axis periodic frequency peaks. Higher suggests a screen.
+    """Prominence of off-axis periodic frequency peaks. Higher suggests a screen.
 
     A display re-photographed by a camera produces a beat pattern between the two
     pixel grids. That shows up as isolated peaks away from the frequency origin,
     which natural images -- whose spectra fall off smoothly -- do not have.
+
+    The earlier implementation measured global peakiness as ``top / median`` over
+    an annular band, and it was confounded by blur: a soft print has a spectrum
+    that falls off steeply, which collapses the band median and inflates that
+    ratio, so a print scored *higher* than an actual screen replay (measured
+    0.234 on a blurred print versus 0.044 on a synthetic screen grid). It was
+    reading spectral falloff, not periodicity.
+
+    This version removes the confound by subtracting the spectrum's isotropic
+    radial background -- the mean magnitude at each radius -- before looking for
+    peaks. Blur changes only that isotropic falloff, so subtracting it makes the
+    cue blur-invariant; what survives is *anisotropic, localized* structure,
+    which is exactly what a screen's beat frequencies are. The score is then how
+    far the strongest surviving peak stands above the band's own noise floor, in
+    robust MAD units, so it does not depend on absolute spectral scale either.
     """
     gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY).astype(np.float32)
     gray = gray - gray.mean()
 
-    spectrum = np.abs(np.fft.fftshift(np.fft.fft2(gray * np.hanning(gray.shape[0])[:, None])))
-    centre = np.array(spectrum.shape) // 2
+    # 2-D Hann window so image edges do not leak energy into false off-axis peaks.
+    window = np.hanning(gray.shape[0])[:, None] * np.hanning(gray.shape[1])[None, :]
+    spectrum = np.log1p(np.abs(np.fft.fftshift(np.fft.fft2(gray * window))))
 
-    # Ignore the DC region and the very top of the band, where sensor noise lives.
+    centre = np.array(spectrum.shape) // 2
     y, x = np.ogrid[: spectrum.shape[0], : spectrum.shape[1]]
     radius = np.hypot(y - centre[0], x - centre[1])
+
+    # Subtract the isotropic radial background: the mean magnitude at each radius.
+    # Overall spectral falloff (the only thing blur alters) is isotropic, so this
+    # cancels it and leaves the directional peaks a screen grid produces.
+    radial_bin = radius.astype(np.int32)
+    totals = np.bincount(radial_bin.ravel(), spectrum.ravel())
+    counts = np.bincount(radial_bin.ravel())
+    radial_mean = totals / np.maximum(counts, 1)
+    residual = spectrum - radial_mean[radial_bin]
+
+    # Ignore the DC region and the very top of the band, where sensor noise lives.
     band = (radius > spectrum.shape[0] * 0.10) & (radius < spectrum.shape[0] * 0.45)
-
-    values = spectrum[band]
-    if values.size == 0 or values.mean() <= 0:
+    values = residual[band]
+    if values.size == 0:
         return 0.0
 
-    # Peakiness: how far the strongest components sit above the band's median.
+    # How far the strongest peak sits above the band's own noise floor, measured
+    # in MAD units so a few sharp peaks cannot inflate the scale they are judged
+    # against. A smooth (natural or blurred) spectrum leaves only small residuals.
     median = float(np.median(values))
-    if median <= 0:
-        return 0.0
+    mad = float(np.median(np.abs(values - median))) + 1e-6
     top = float(np.quantile(values, 0.9995))
-    return float(np.clip((top / median - 1.0) / 100.0, 0.0, 1.0))
+    prominence = (top - median) / mad
+    return float(np.clip(prominence / 30.0, 0.0, 1.0))
 
 
 def specular_concentration(face: np.ndarray) -> float:

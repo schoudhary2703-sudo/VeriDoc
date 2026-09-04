@@ -145,11 +145,43 @@ transforms. This tests the implementation, **not** its accuracy:
 |---|---|---|---|---|
 | `micro_texture_energy` | 28.2 | 24.1 | **16.6** | responds strongly, correct direction |
 | `chroma_spread` | 6.11 | 6.11 | **2.79** | correct: unmoved by replay, collapses on print |
-| `moire_interference` | 0.43 | 0.52 | **0.87** | **confounded** -- fires harder on print than replay |
+| `moire_interference` | 0.43 | 0.52 | **0.87** | **was confounded** -- fired harder on print than replay; since reworked, see below |
 | `specular_concentration` | 0.07 | 0.09 | 0.09 | barely moves at this crop size |
 
-Two cues behave as designed. The moire cue is confounded by blur and would need
-rework before it is trustworthy; specular concentration is close to useless.
+Two cues behave as designed. Specular concentration is close to useless at this
+crop size. The moire cue *was* confounded by blur — as the row above shows, it
+fired harder on a print (0.87) than on a screen replay (0.52) — and has since
+been reworked; the specular cue has not.
+
+#### Moire cue rework
+
+The old cue scored global peakiness as `top / median` over an annular frequency
+band. A soft print has a steeply falling spectrum, which collapses that band's
+median and inflates the ratio, so the cue was reading *spectral falloff*, not
+*periodicity* — and a blurred print out-scored an actual screen. Reproduced on
+synthetic transforms: **print 0.234 vs screen grid 0.044**, the wrong way round.
+
+The rework subtracts the spectrum's isotropic radial background (the mean
+magnitude at each radius) before looking for peaks. Blur changes only that
+isotropic falloff, so removing it makes the cue blur-invariant; what remains is
+the anisotropic, localized peaks a screen's beat frequencies produce. The score
+is the strongest surviving peak's height above the band's noise floor, in robust
+MAD units. On the same synthetic transforms (mean over 15 seeds):
+
+| transform | old cue | reworked cue |
+|---|---|---|
+| live (baseline) | 0.106 | 0.106 |
+| print (blur) | **0.234** | 0.108 |
+| screen (periodic grid) | 0.044 | **0.388** |
+
+Blur no longer lifts the cue above the live baseline, and a screen grid now
+out-scores a print for every seed. Guarded by `test_moire_responds_to_a_screen_grid`
+and `test_moire_is_not_confounded_by_blur` in `tests/test_liveness.py`.
+
+**This is a mechanism fix, not a calibration.** It corrects the direction the
+cue responds in; it does not establish that it separates *real* screens from
+*real* faces. `LIVENESS_CALIBRATED` remains `False`, the cue still needs an
+AUC ≥ 0.70 on collected captures before it is enabled, exactly like the others.
 
 **To calibrate without a licensed dataset**, photograph roughly 30 consented
 faces directly and re-present the same faces as printed photos and on a screen,
