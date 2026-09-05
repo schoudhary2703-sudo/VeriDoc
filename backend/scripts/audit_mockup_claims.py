@@ -38,14 +38,23 @@ TD3_LINE2 = re.compile(r"^[0-9A-Z<]{9}\d[A-Z]{3}\d{6}\d[MF<]\d{6}\d")
 MRZ_CANDIDATE = re.compile(r"(?:[A-Z][0-9A-Z]{7})&lt;(?:&lt;|[A-Z0-9])+")
 
 # Claims that outran the system. See docs/UI_REVIEW.md.
-STALE_CLAIMS = {
-    "0.75": "superseded face threshold (real: 0.40, face_match.py DEFAULT_MATCH_THRESHOLD)",
-    "0.85": "auto-clear threshold -- there is no auto-clear",
-    "Model confidence": "no such metric; only per-check confidence exists",
-    "MODEL CONFIDENCE": "no such metric; only per-check confidence exists",
-    "auto-clear threshold. Confidence": "auto-clear language",
-    "Stamp and overprint": "this check does not exist in the engine",
-}
+#
+# Matched against the page's *visible text*, and the numeric ones require the
+# wording that makes them a claim. Bare "0.75" and "0.85" were matched as
+# substrings of the whole file at first, which fails on `opacity: 0.85` in a
+# stylesheet -- and a gate that cries wolf gets switched off, which is worse
+# than not having one.
+STALE_CLAIMS = [
+    (re.compile(r"0\.75\s*(?:threshold|match)|(?:threshold|against a)\s*(?:of\s*)?0\.75", re.I),
+     "superseded face threshold (real: 0.40, face_match.py DEFAULT_MATCH_THRESHOLD)"),
+    (re.compile(r"0\.85\s*(?:auto-?\s?clear|threshold)"
+                r"|(?:auto-?\s?clear|threshold)\s*(?:of\s*)?0\.85", re.I),
+     "auto-clear threshold -- there is no auto-clear, and 0.85 is not one of our thresholds"),
+    (re.compile(r"model\s+confidence", re.I),
+     "no such metric; only per-check confidence exists"),
+    (re.compile(r"stamp\s+and\s+overprint", re.I),
+     "this check does not exist in the engine"),
+]
 
 # Warm pipeline is ~1.9 s, ~2.2 s with face analysis. Anything much past that
 # was invented.
@@ -103,10 +112,27 @@ def date_forms(t: tuple[int, int, int]) -> list[str]:
             "%02d/%02d/%d" % (day, month, year)]
 
 
+def searchable_text(raw: str) -> str:
+    """Everything that can carry a claim, with stylesheets removed.
+
+    **Do not strip <script> here.** The team's mockups are single-file exports
+    whose entire UI is built in JavaScript: removing script bodies from
+    `VeriDoc Verify Screen.html` takes it from 706,520 characters to 1,708 and
+    every claim in the page disappears with them. An earlier version of this
+    function did exactly that, and the audit went from reporting 15 real defects
+    to reporting 5 and exiting 0 -- a gate that had stopped being able to see the
+    thing it gates, which is the failure this whole script exists to prevent.
+
+    Stylesheets are different: CSS is never page copy, and its numbers (`opacity:
+    0.85`, `animation: 3.5s`) are exactly the false positives worth removing.
+    """
+    return re.sub(r"<style\b[^>]*>.*?</style>", " ", raw, flags=re.I | re.S)
+
+
 def audit(path: Path) -> list[str]:
     raw = path.read_text(encoding="utf-8")
-    text = html.unescape(re.sub(r"<[^>]*>", " ", raw))
-    folded = text.casefold()
+    text = searchable_text(raw)
+    folded = html.unescape(re.sub(r"<[^>]*>", " ", text)).casefold()
     problems: list[str] = []
 
     print("=" * 70)
@@ -166,12 +192,14 @@ def audit(path: Path) -> list[str]:
             else:
                 print("      --    %s not printed on this page, nothing to compare" % label)
 
-    for needle, why in STALE_CLAIMS.items():
-        if needle in raw:
+    for pattern, why in STALE_CLAIMS:
+        found = pattern.search(text)
+        if found:
+            needle = found.group(0).strip()
             print("\n  FAIL  stale claim %r -- %s" % (needle, why))
             problems.append("%s: stale claim %r (%s)" % (path.name, needle, why))
 
-    timings = sorted({float(t[:-1]) for t in re.findall(r"\b\d+\.\d+s\b", raw)})
+    timings = sorted({float(t[:-1]) for t in re.findall(r"\b\d+\.\d+s\b", text)})
     if timings:
         slow = [t for t in timings if t > MAX_PLAUSIBLE_SECONDS]
         print("\n  timings shown: %s" % timings)

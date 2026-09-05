@@ -65,6 +65,35 @@ jobs:
             echo "::error title=Frontend ($f)::$(tail -40 "$f" | sed -z 's/\n/%0A/g')"
           done
 
+  mockups:
+    name: Mockups — claim audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The auditor uses only the standard library, so this job needs no install
+      # and finishes in seconds. It validates every MRZ on the page, cross-checks
+      # the decoded fields against the printed dates beside them, and greps for
+      # claims the system cannot back.
+      #
+      # Anything a judge will see belongs in docs/mockups/. While that directory
+      # is empty this job says so and passes -- it does not silently succeed on
+      # nothing, because "no files checked" and "all files clean" are different
+      # facts and only one of them is reassuring.
+      - name: Audit
+        run: |
+          shopt -s nullglob
+          pages=(docs/mockups/*.html)
+          if [ ${#pages[@]} -eq 0 ]; then
+            echo "::notice title=Mockup audit::No pages in docs/mockups/ — nothing audited. Commit the team's mockups there and this job will check every MRZ and claim on them."
+            exit 0
+          fi
+          python backend/scripts/audit_mockup_claims.py "${pages[@]}"
+
   backend:
     name: Backend — pytest
     runs-on: ubuntu-latest
