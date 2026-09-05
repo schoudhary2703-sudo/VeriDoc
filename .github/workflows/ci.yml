@@ -14,6 +14,11 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Each suite writes its output to a log and, on failure, echoes the tail back as
+# an error annotation. GitHub requires a signed-in session to read Actions logs
+# even on a public repository, while annotations are readable by anyone, so a
+# bare "Process completed with exit code 1" tells an outside contributor
+# nothing. This makes the failure legible without an account.
 jobs:
   frontend:
     name: Frontend — tests and build
@@ -35,14 +40,26 @@ jobs:
       # escape from, so a plain `npm test` cannot hang the runner.
       - name: Test
         working-directory: frontend
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee /tmp/frontend-test.log
 
       # The build is a type check with teeth: `vite build` runs `tsc -b` first,
       # so a contract drift between the frontend types and the API schema fails
       # here rather than in front of a judge.
       - name: Build
         working-directory: frontend
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee /tmp/frontend-build.log
+
+      - name: Surface the failure
+        if: failure()
+        run: |
+          for f in /tmp/frontend-test.log /tmp/frontend-build.log; do
+            [ -f "$f" ] || continue
+            echo "::error title=Frontend ($f)::$(tail -40 "$f" | sed -z 's/\n/%0A/g')"
+          done
 
   backend:
     name: Backend — pytest
@@ -88,4 +105,12 @@ jobs:
       # is this project's recurring failure mode applied to its own CI.
       - name: Test
         working-directory: backend
-        run: pytest -q -ra --tb=short
+        run: |
+          set -o pipefail
+          pytest -q -ra --tb=short 2>&1 | tee /tmp/backend-test.log
+
+      - name: Surface the failure
+        if: failure()
+        run: |
+          [ -f /tmp/backend-test.log ] || exit 0
+          echo "::error title=Backend pytest::$(tail -40 /tmp/backend-test.log | sed -z 's/\n/%0A/g')"
