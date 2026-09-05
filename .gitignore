@@ -35,6 +35,13 @@ data/synthetic/
 data/processed/
 !data/samples/
 
+# Liveness captures — consented photos of real people, never committed.
+# The instructions for what to collect live in data/liveness/README.md, which
+# is kept; every image dropped alongside it is ignored.
+data/liveness/**
+!data/liveness/
+!data/liveness/README.md
+
 # OS / editor
 .DS_Store
 Thumbs.db
