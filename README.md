@@ -45,7 +45,7 @@ devices, and no threshold in the engine tuned on any of it.
 
 | | Result |
 |---|---|
-| **False positives on 150 genuine documents** | **0%** |
+| **False positives on 150 genuine documents (FantasyID)** | **0%** |
 | Face-swap detection | **47%** |
 | Text-manipulation detection | **8%** |
 | Overall attack detection | 27% |
@@ -57,6 +57,23 @@ risk, and a single blended accuracy figure would have hidden it.
 
 Full numbers, and the commands that reproduce every one of them, in
 [docs/DATASETS.md](docs/DATASETS.md).
+
+### The cross-dataset result, which is less flattering
+
+Those numbers are all FantasyID. Scored against **SIDTD** — a different group's
+dataset, different source images, different forgery methods, nothing tuned on it
+— the false-positive rate is **17/150 (11%)**, not 0%.
+
+All seventeen are Latvian passports (17 of 18 in the sample); the other nine
+nationalities are 0/132. The cause for the face check is understood: a genuine
+Latvian passport's two portraits agree at 0.907 cosine, higher than FantasyID's
+*face swaps* at 0.844, because that template reproduces the ghost image
+near-identically. A single global threshold cannot separate those populations.
+
+We are not reporting "0/132 excluding Latvia" as the headline. One template in
+ten falsely accusing its holders is a deployment blocker, and excluding it would
+be fitting to the second dataset the way the first numbers were fitted to the
+first. Details in [docs/FORENSICS_SIDTD.md](docs/FORENSICS_SIDTD.md).
 
 ### The interesting part
 

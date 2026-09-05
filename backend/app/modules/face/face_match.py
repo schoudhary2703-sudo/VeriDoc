@@ -34,6 +34,25 @@ measured on that sample:
 The default sits at the zero-false-positive point deliberately, in line with the
 project's stance that a border system must not accuse genuine travellers.
 
+**That zero is dataset-specific, and SIDTD shows how it breaks.** Scored on
+SIDTD (2026-09-06), genuine Latvian passports have a median intra-document
+similarity of **0.907** -- above this threshold, and above FantasyID's own
+*face-swap* median of 0.844. 8 of 8 sampled genuine Latvian passports flag.
+
+The reason is mechanical, not statistical: the check assumes the ghost image is a
+physically distinct rendering of the portrait, and the Latvian template
+reproduces it near-identically, so a genuine card is *supposed* to look like
+that. Other templates behave as expected (alb 0.776, aze 0.725, fin 0.670,
+srb 0.483).
+
+No single value of this constant fixes it. Raising it past 0.912 would put it
+beyond FantasyID's entire face-swap distribution and disable the detector
+outright. What this check actually needs is a per-template expectation, or an
+explicit applicability rule that returns `applicable=False` on templates whose
+ghost image is a digital copy. Until one of those exists, the false-positive
+guarantee holds only for templates resembling those measured. See
+docs/FORENSICS_SIDTD.md.
+
 Crucially this signal is **orthogonal to the classical forensic checks**. On 80
 genuine and 80 face-swap documents:
 

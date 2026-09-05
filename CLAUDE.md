@@ -86,9 +86,14 @@ Never blend these into one accuracy figure. Detection is also strongly
 device-dependent (49% Huawei, 48% iPhone 15, 8% scanner, **0% iPhone 15 Pro**),
 and a single number hides that completely.
 
+**Every figure above is FantasyID.** Say so when quoting them. SIDTD says the
+zero does not carry — see the next section, and quote that alongside.
+
 Face-swap detection comes from two orthogonal signals: the classical checks
 (29% alone) plus the Phase 3 intra-document face consistency check, whose
-detections have zero overlap with them.
+detections have zero overlap with them **on FantasyID**. On SIDTD the two fired
+on the same documents, so the orthogonality is a property of that dataset too,
+not an established property of the checks.
 
 **Do not quote [docs/FORENSICS_RESULTS.md](docs/FORENSICS_RESULTS.md)** — that is
 the synthetic smoke test, whose thresholds were fitted on the very images it
@@ -100,6 +105,67 @@ from the run rather than typed in.
 file.** Stale numbers have drifted into the docs twice — once after the exposure
 fix, and once inside the generator's own prose, where it claimed 46% on Huawei
 directly beside a table saying 49%.
+
+## SIDTD — the cross-dataset check, and what it found
+
+Run 2026-09-06, 150 genuine + 150 forged from SIDTD's template set
+(`python -m ml.evaluate_sidtd --limit 150 --seed 11`). Full numbers in
+[docs/FORENSICS_SIDTD.md](docs/FORENSICS_SIDTD.md), per-image results beside it
+in `FORENSICS_SIDTD.csv`.
+
+| | FantasyID | SIDTD |
+|---|---|---|
+| False positives on genuine | 0/150 (0%) | **17/150 (11%)** |
+| Forgery detection | 82/300 (27%) | 8/150 (5%) |
+
+**The zero-false-positive property does not survive a second dataset.** That is
+the honest headline and it must be said before the FantasyID numbers, not after.
+
+But the failure is concentrated, not diffuse: **all 17 false positives are
+Latvian passports**, 17 of the 18 in the sample. The other nine nationalities are
+0/132. The thresholds are not globally too tight; one document design defeats
+them.
+
+### Why, for the face check — this one is understood
+
+Intra-document portrait similarity on *genuine* documents:
+
+| | median | flagged at 0.884 |
+|---|---|---|
+| `lva` | **0.907** | 8/8 |
+| `alb` | 0.776 | 0/8 |
+| `aze` | 0.725 | 0/2 |
+| `fin` | 0.670 | 0/8 |
+| `srb` | 0.483 | 0/8 |
+
+FantasyID's genuine median is 0.729 and its **face-swap** median is 0.844. A
+genuine Latvian passport (0.907) is therefore more self-similar than a FantasyID
+forgery. The check assumes the ghost image is a physically distinct rendering of
+the portrait; the Latvian template reproduces it near-identically, so genuine
+cards are *supposed* to look like that.
+
+No global threshold separates those populations. Raising it above 0.912 to
+silence Latvia would put it beyond FantasyID's entire face-swap distribution and
+destroy the detector. This needs a per-template baseline or an explicit
+applicability restriction — **it cannot be fixed with a number.**
+
+### Why, for ELA — not understood
+
+ELA fired on 16 of the 17. The obvious explanation, heavier JPEG compression, is
+wrong: Latvia sits mid-pack at 0.387 B/px, above `rus` (0.291) and `est` (0.377),
+both of which produce zero false positives. Unexplained. Do not guess in a
+write-up; say it is open.
+
+### Do not "fix" this by excluding Latvia
+
+Reporting 0/132 as the headline would be fitting to SIDTD exactly as the original
+numbers were fitted to FantasyID. One template in ten producing false accusations
+is a deployment blocker. A border system that flags every Latvian passport holder
+is not deployable however clean the other nine look.
+
+Note also that Latvia has the *highest* detection rate in the run (46%) while
+eight nationalities sit at 0% — most likely the same artefact firing on the
+template rather than on tampering, which makes the 5% weaker than it appears.
 
 ## The defect this project keeps producing
 
@@ -145,9 +211,11 @@ lives downstream of the flag every time.
 
 ## Known gaps — say these out loud rather than let a judge find them
 
-1. **SIDTD cross-dataset validation has never been run.** Every number above
-   comes from FantasyID. Until SIDTD is scored, we cannot claim the detectors
-   learned general tamper cues rather than one dataset's signature.
+1. **The zero-false-positive claim is FantasyID-specific.** SIDTD has now been
+   run and it produced 11% false positives, all of them one document template
+   (Latvian passports, 17/18). See the SIDTD section above. This is the most
+   important thing to say about accuracy and it should be volunteered, not
+   waited for.
 2. **The mockup audit is not gated.** CI now runs both suites on every pull
    request, but `backend/scripts/audit_mockup_claims.py` still has nothing to
    check: the mockups live outside the repo. Commit them under `docs/mockups/`
