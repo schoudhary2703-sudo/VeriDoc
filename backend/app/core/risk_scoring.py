@@ -254,7 +254,9 @@ def _db_evidence(db: DBCrosscheckResult) -> tuple[EvidenceItem, float]:
 # document: the noise check is disabled pending calibration, and the CNN never
 # trained. Counting them as coverage gaps would mark every document as poorly
 # captured, which is the opposite of informative.
-CONFIG_DISABLED_CHECKS = frozenset({"noise_consistency", "cnn_classifier"})
+CONFIG_DISABLED_CHECKS = frozenset(
+    {"noise_consistency", "cnn_classifier", "intra_document_face_consistency"}
+)
 
 
 def _coverage_ratio(evidence: list[EvidenceItem]) -> float:

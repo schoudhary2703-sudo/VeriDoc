@@ -37,7 +37,9 @@ CHECK_WEIGHTS: dict[str, float] = {
     # Those are pilot figures on 160 images, NOT the headline. The full held-out
     # evaluation (450 images) is docs/FORENSICS_FANTASYID.md and reports 29% ->
     # 47%. Quote that one. See also app/modules/face/face_match.py.
-    "intra_document_face_consistency": 0.40,
+    # Zero until a per-template baseline exists -- see INTRA_DOC_CALIBRATED in
+    # app/modules/face/face_match.py for the SIDTD measurement that forced this.
+    "intra_document_face_consistency": 0.0,
     # Stays at zero: three training attempts all scored at or below chance.
     # See docs/FORENSICS_CNN_ATTEMPTS.md.
     "cnn_classifier": 0.0,

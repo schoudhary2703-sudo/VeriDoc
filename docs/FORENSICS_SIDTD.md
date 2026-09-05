@@ -17,9 +17,9 @@ image here is held out by construction.
 ## Headline
 
 - Images evaluated: **300** (150 genuine, 150 forged)  — random sample, seed 11
-- **False-positive rate on genuine documents: 17/150 (11%)**
-- **Forgery detection rate: 8/150 (5%)**
-- Mean analysis time: 6467 ms per image
+- **False-positive rate on genuine documents: 0/150 (0%)**
+- **Forgery detection rate: 0/150 (0%)**
+- Mean analysis time: 959 ms per image
 
 > The timing is `engine.analyze` only and reflects whatever the machine had
 > spare; it is not a benchmark. See the same note in `FORENSICS_FANTASYID.md`.
@@ -28,8 +28,7 @@ image here is held out by construction.
 
 | Check | Times flagged |
 |---|---|
-| `error_level_analysis` | 8 |
-| `intra_document_face_consistency` | 8 |
+| *(none)* | 0 |
 
 ## False positives per nationality — read this before the averages
 
@@ -41,36 +40,28 @@ image here is held out by construction.
 | `est` | 0/11 | 0% |
 | `fin` | 0/19 | 0% |
 | `grc` | 0/13 | 0% |
-| **`lva` ** | 17/18 | 94% |
+| `lva` | 0/18 | 0% |
 | `rus` | 0/13 | 0% |
 | `srb` | 0/15 | 0% |
 | `svk` | 0/12 | 0% |
-
-**17 of the 17 false positives are `lva`** (17/18 of that template). Excluding it, the rate over the remaining 132 genuine documents is **0/132 (0%)**.
-
-That does not rescue the headline claim -- one template in ten producing
-false accusations is a deployment blocker, not a footnote -- but it does say
-what kind of problem this is. The thresholds are not globally too tight;
-one document design defeats them.
 
 ## Which checks fired on genuine documents
 
 | Check | Times flagged |
 |---|---|
-| `error_level_analysis` | 16 |
-| `intra_document_face_consistency` | 16 |
+| *(none)* | 0 |
 
 ## Detection rate per document nationality
 
 | Nationality | Detected | Rate |
 |---|---|---|
-| `alb` | 2/17 | 12% |
+| `alb` | 0/17 | 0% |
 | `aze` | 0/25 | 0% |
 | `esp` | 0/15 | 0% |
 | `est` | 0/13 | 0% |
 | `fin` | 0/11 | 0% |
 | `grc` | 0/12 | 0% |
-| `lva` | 6/13 | 46% |
+| `lva` | 0/13 | 0% |
 | `rus` | 0/14 | 0% |
 | `srb` | 0/16 | 0% |
 | `svk` | 0/14 | 0% |
@@ -79,8 +70,8 @@ one document design defeats them.
 
 | | FantasyID | SIDTD |
 |---|---|---|
-| False positives on genuine | 0/150 (0%) | 17/150 (11%) |
-| Forgery detection | 82/300 (27%) | 8/150 (5%) |
+| False positives on genuine | 0/150 (0%) | 0/150 (0%) |
+| Forgery detection | 82/300 (27%) | 0/150 (0%) |
 
 FantasyID's 27% is over face swaps and text manipulations in equal number;
 SIDTD's forgeries are a different mix, so the two detection figures are not

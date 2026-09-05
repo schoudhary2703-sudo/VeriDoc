@@ -135,11 +135,80 @@ class TestIntraDocumentConsistency:
         pytest.skip("no two-portrait document found in the sample")
 
 
-class TestEngineIntegration:
-    def test_face_check_is_weighted_and_counted(self) -> None:
+class TestUncalibratedAcrossTemplates:
+    """The check is disabled until it has a per-template baseline.
+
+    SIDTD showed the assumption behind it is a property of the document template,
+    not of tampering: genuine Latvian passports agree at a median 0.904, above
+    FantasyID's face swaps at 0.850, and 100% of those swaps score below the
+    highest genuine Latvian card. No threshold separates them, so the check
+    reports its measurement and abstains rather than accusing a real traveller.
+    """
+
+    @pytest.fixture(scope="module")
+    def face_match(self):
+        return _require_insightface()
+
+    def test_module_declares_itself_uncalibrated(self, face_match) -> None:
+        assert face_match.INTRA_DOC_CALIBRATED is False
+
+    def test_a_high_similarity_document_is_not_flagged(self, face_match) -> None:
+        """A two-portrait card reports a measurement, never a finding."""
+        import cv2
+
+        for path in _sample("genuine", 6):
+            finding = face_match.check_intra_document_consistency(cv2.imread(str(path)))
+            if "second portrait" in finding.detail:
+                continue
+            assert finding.flagged is False
+            assert finding.applicable is False
+            assert finding.tamper_type is None
+            return
+        pytest.skip("no two-portrait document found in the sample")
+
+    def test_it_renders_as_not_applicable_not_as_a_pass(self, face_match) -> None:
+        """Guard the rendered status: this project's defect lives downstream."""
+        import cv2
+        from app.core.risk_scoring import _forensics_evidence
+        from app.core.schemas import EvidenceStatus, ForensicsResult
+
+        for path in _sample("genuine", 6):
+            finding = face_match.check_intra_document_consistency(cv2.imread(str(path)))
+            if "second portrait" in finding.detail:
+                continue
+            items, _ = _forensics_evidence(
+                ForensicsResult(findings=[finding], score=0.0, tampered=False)
+            )
+            assert items[0].status is EvidenceStatus.NOT_APPLICABLE
+            return
+        pytest.skip("no two-portrait document found in the sample")
+
+    def test_it_carries_no_weight(self) -> None:
+        """A disabled check must not move a verdict, the noise_consistency rule."""
         from app.modules.forensics import engine
 
-        assert engine.CHECK_WEIGHTS["intra_document_face_consistency"] > 0.0
+        assert engine.CHECK_WEIGHTS["intra_document_face_consistency"] == 0.0
+
+    def test_it_is_excluded_from_the_coverage_ratio(self) -> None:
+        """Otherwise every document looks under-verified and floors to REVIEW."""
+        from app.core.risk_scoring import CONFIG_DISABLED_CHECKS
+
+        assert "intra_document_face_consistency" in CONFIG_DISABLED_CHECKS
+
+    def test_the_similarity_is_still_reported(self, face_match) -> None:
+        """Abstaining is not the same as staying silent -- the officer sees it."""
+        import cv2
+        for path in _sample("genuine", 6):
+            finding = face_match.check_intra_document_consistency(cv2.imread(str(path)))
+            if "second portrait" in finding.detail:
+                continue
+            assert "cosine" in finding.detail
+            assert len(finding.regions) == 2
+            return
+        pytest.skip("no two-portrait document found in the sample")
+
+
+class TestEngineIntegration:
 
     def test_inapplicable_checks_do_not_dilute_the_score(self) -> None:
         """Regression: adding a fourth check must not suppress the other three.
