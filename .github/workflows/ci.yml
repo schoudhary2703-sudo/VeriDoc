@@ -26,9 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Node 22, matching frontend/Dockerfile. Node 20 fails before running a
+      # single test: jsdom 30's bundled undici calls `webidl.util.markAsUncloneable`,
+      # a Node internal that does not exist on every 20.x release, so `vitest run`
+      # dies during environment setup with "not a function".
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -67,6 +71,36 @@ jobs:
     # Installing paddlepaddle, torch and insightface is several minutes of wheel
     # downloads, and buffalo_l pulls another 281 MB on first use.
     timeout-minutes: 45
+
+    # The audit-log tests need a real database. Locally they never touch one:
+    # psycopg is not installed in the dev venv, so `get_engine` fails to build
+    # the configured Postgres engine and silently falls back to SQLite. CI does
+    # install psycopg, the engine builds, and the connection to compose's `db`
+    # host then fails at runtime -- which is how this first showed up.
+    #
+    # So Postgres here is not ceremony: it is the first time the append-only
+    # audit schema is exercised against the database it actually ships on.
+    # postgres:15-alpine matches docker-compose.yml.
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: veridoc
+          POSTGRES_PASSWORD: veridoc
+          POSTGRES_DB: veridoc
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U veridoc -d veridoc"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Reached over the mapped port, not by service name: these steps run on the
+      # runner host, not inside a job container.
+      DATABASE_URL: postgresql+psycopg://veridoc:veridoc@localhost:5432/veridoc
+
     steps:
       - uses: actions/checkout@v4
 
