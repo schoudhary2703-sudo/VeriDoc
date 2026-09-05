@@ -165,12 +165,43 @@ lives downstream of the flag every time.
    InsightFace's published guidance, not a value calibrated on document+live
    pairs, which we do not have. Do not quote an EER.
 
+## CI, and the one thing it exercises that your machine does not
+
+`.github/workflows/ci.yml` runs both suites on every pull request: pytest on
+Python 3.12 against a real `postgres:15-alpine`, and vitest plus `npm run build`
+on Node 22. Green on the first attempt is not the norm — read this before
+debugging a red run.
+
+- **Node must be 22 or newer.** On Node 20 `vitest` dies before running a test
+  with `webidl.util.markAsUncloneable is not a function`, from jsdom 30's
+  bundled undici.
+- **`npm run build` is a type check with teeth**, since `vite build` runs
+  `tsc -b` first. It caught twelve errors that `npm test` passed straight over,
+  because `vitest.setup.ts` was outside the tsconfig `include` and the jest-dom
+  matcher types therefore never entered the program.
+- **CI is the only place the audit log meets Postgres.** `psycopg` is not
+  installed in the local dev venv, so `get_engine` raises while building the
+  configured Postgres engine and falls back to SQLite — silently, by design. Every
+  local run of `tests/test_api.py` has therefore been against SQLite. Note the
+  fallback catches engine *construction* only: an installed driver plus an
+  unreachable host surfaces as an unhandled `OperationalError`, not the degraded
+  health line its docstring promises.
+- **A failing step echoes its own output back as an error annotation**, because
+  GitHub gates Actions logs behind a signed-in session even on a public repo.
+  Annotations are readable by anyone; `Process completed with exit code 1` is not
+  a diagnosis.
+
 ## Working with the team
 
 Three teammates (Pranav, Rohit, Ayush) work from
 `VeriDoc_Team_Work_Division.docx`. They access the models through Docker Compose
 — the `paddle-models` and `insightface-models` named volumes mean nobody
 re-downloads weights. Branch off `main`, open a PR.
+
+**Review PRs by measuring, not by reading.** Both PRs so far carried a number in
+their prose that the diff did not support, while the code itself was sound. Re-run
+whatever the description claims: it takes minutes and it is the only thing that
+distinguishes a checked claim from a plausible one.
 
 Anything a judge will see — a mockup, a slide, an exported screen — should be run
 through `python backend/scripts/audit_mockup_claims.py <file.html>` first. It
