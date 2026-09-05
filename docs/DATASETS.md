@@ -159,24 +159,32 @@ The old cue scored global peakiness as `top / median` over an annular frequency
 band. A soft print has a steeply falling spectrum, which collapses that band's
 median and inflates the ratio, so the cue was reading *spectral falloff*, not
 *periodicity* — and a blurred print out-scored an actual screen. Reproduced on
-synthetic transforms: **print 0.234 vs screen grid 0.044**, the wrong way round.
+synthetic transforms: **print 0.205 vs screen grid 0.030**, the wrong way round.
 
 The rework subtracts the spectrum's isotropic radial background (the mean
 magnitude at each radius) before looking for peaks. Blur changes only that
 isotropic falloff, so removing it makes the cue blur-invariant; what remains is
 the anisotropic, localized peaks a screen's beat frequencies produce. The score
 is the strongest surviving peak's height above the band's noise floor, in robust
-MAD units. On the same synthetic transforms (mean over 15 seeds):
+MAD units. On the same synthetic transforms, mean over seeds 1-15, both cues
+measured in one run so the two columns are comparable:
 
 | transform | old cue | reworked cue |
 |---|---|---|
-| live (baseline) | 0.106 | 0.106 |
-| print (blur) | **0.234** | 0.108 |
-| screen (periodic grid) | 0.044 | **0.388** |
+| live (baseline) | 0.024 | 0.106 |
+| print (blur) | **0.205** | 0.108 |
+| screen (periodic grid) | 0.030 | **0.369** |
 
-Blur no longer lifts the cue above the live baseline, and a screen grid now
-out-scores a print for every seed. Guarded by `test_moire_responds_to_a_screen_grid`
-and `test_moire_is_not_confounded_by_blur` in `tests/test_liveness.py`.
+Read the old column as one story: a blurred print scored **8.5x** the live
+baseline while a real screen scored barely above it. The cue was ranking images
+by how soft they were.
+
+In the reworked column blur sits on the live baseline (0.108 vs 0.106) and a
+screen grid stands three and a half times above it. A screen out-scores a print
+on every seed tested: **8/8 the wrong way round before, 0/8 after.**
+
+Guarded by `test_moire_responds_to_a_screen_grid` and
+`test_moire_is_not_confounded_by_blur` in `tests/test_liveness.py`.
 
 **This is a mechanism fix, not a calibration.** It corrects the direction the
 cue responds in; it does not establish that it separates *real* screens from
