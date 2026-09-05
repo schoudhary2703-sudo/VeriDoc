@@ -6,47 +6,9 @@ SIH Problem Statement **SIH26188** · Ministry of Home Affairs · Software · Sm
 ## Engineering plan
 
 The full architecture, API contract, and phase-by-phase build plan live in
-[BUILD_PLAN.md](BUILD_PLAN.md). Read it before starting work. Build strictly one
-phase at a time and verify that phase's "Definition of Done" before moving on.
-
-## Data strategy
-
-[docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) names the concrete dataset per
-module and supersedes the vaguer data notes in `BUILD_PLAN.md`. Read it before
-starting Phases 2 or 3. It changes the plan in four ways worth knowing up front:
-
-- **Forensics training data is IDNet (CC-BY-4.0, Hugging Face)** plus specimen
-  documents we generate ourselves with DocXPand for Indian formats -- not
-  hand-rolled forgeries from scratch as `BUILD_PLAN.md` Phase 2 implies.
-- **SIDTD is the held-out cross-dataset validation set.** If forensics accuracy
-  collapses on SIDTD, the model learned IDNet's generation signature rather than
-  general tamper cues. Report both numbers, always.
-- **No pixel-level tamper localization.** Tampered regions on ID documents are
-  0.27-4.17% of the image, and SOTA detectors score near-zero on pixel-level
-  localization. Forensics output is field/region-level classification plus a
-  coarse bounding box. The evidence panel must not promise a precise heatmap.
-- **Face match needs no training** -- InsightFace `buffalo_l` pretrained, tune
-  the threshold only. Liveness does need a trained classifier (CelebA-Spoof),
-  and every public anti-spoofing dataset is **research-licensed only**. Say so
-  in the README and the submission; do not imply a commercially deployable model.
-
-## Phase 2 outcome — read before touching forensics
-
-The classical detectors ship; **the learned CNN does not**. Three training
-configurations were tried against FantasyID's held-out split and all scored at or
-below chance -- see [docs/FORENSICS_CNN_ATTEMPTS.md](docs/FORENSICS_CNN_ATTEMPTS.md)
-for the numbers and the measured diagnosis of each. `CHECK_WEIGHTS["cnn_classifier"]`
-is `0.0` and no checkpoint sits at the production path, so the engine degrades to
-the explainable checks. Do not re-run those configurations without more data, a
-GPU, or a frequency-domain (DCT) approach.
-
-Honest headline numbers for the classical engine, on genuinely held-out data:
-**0% false positives on 150 genuine documents, 46% detection on face swaps, 6%
-on text manipulation, 26% overall.** Face-swap detection comes from two
-orthogonal signals -- the classical checks (29% alone) plus the Phase 3
-intra-document face consistency check. Quote those, not the synthetic smoke-test figures in
-[docs/FORENSICS_RESULTS.md](docs/FORENSICS_RESULTS.md), whose thresholds were
-fitted on the very images they score.
+[BUILD_PLAN.md](BUILD_PLAN.md). All nine phases (0-8) have now been built and
+have a recorded outcome — see "Where the build actually landed" below, which
+supersedes the plan wherever the two disagree.
 
 ## Naming
 
@@ -63,14 +25,154 @@ named **VeriDoc**. Wherever the plan says `docsentry`, use `veridoc`:
 Everything else in `BUILD_PLAN.md` — architecture, tech stack, API contract,
 phase gates — applies as written.
 
+## The data we actually used
+
+[docs/DATA_STRATEGY.md](docs/DATA_STRATEGY.md) was the plan;
+[docs/DATASETS.md](docs/DATASETS.md) records what was really obtained. Three
+things changed during the build and both older documents still carry the plan:
+
+- **Forensics data is FantasyID, not IDNet.** IDNet measured **124.93 GB** on
+  Hugging Face, which was infeasible on this machine. FantasyID (Zenodo record
+  17063366, ~2 GB) replaced it: its official test split uses *different card
+  templates* from its train split and every image is a real print captured on an
+  iPhone 15 Pro, a Huawei Mate 30, or a Kyocera scanner. That makes it a genuine
+  held-out set, which is what mattered.
+- **MIDV-500/2020 was never used.** It is named in `BUILD_PLAN.md` and
+  `DATA_STRATEGY.md` and appears nowhere in the code or `data/`. Do not cite it.
+- **SIDTD cross-dataset validation has never been run.** This is the largest
+  open gap in the evaluation and is described under "Known gaps" below.
+
+## Where the build actually landed
+
+| Phase | Status | The part worth knowing |
+|---|---|---|
+| 0 Scaffolding | done | Docker Compose: `db`, `redis`, `backend`, `frontend`; model caches in named volumes so a rebuild does not re-download 623 MB |
+| 1 OCR & MRZ | done | PaddleOCR PP-OCRv5 mobile + a pure-Python ICAO 9303 parser (TD1/TD2/TD3) |
+| 2 Forensics | **partial** | Classical checks ship; the learned CNN does not — see below |
+| 3 Face & liveness | done | Face match works; **liveness is uncalibrated and returns `passed=None`** |
+| 4 Risk scoring | done | Rules-weighted noisy-OR, four-state evidence, coverage floor |
+| 5 Dashboard | done | React + Vite + Tailwind v4; verify screen, evidence panel, audit log |
+| 6 Audit log | done | Append-only `Verification` + `OfficerDecision` tables, Alembic migrations |
+| 7 Testing | done | 94 backend (93 pass + 1 documented xfail) + 24 frontend, run on every PR by `.github/workflows/ci.yml` |
+| 8 Demo polish | done | Two synthetic specimen documents wired as demo buttons |
+
+### Phase 2 — read before touching forensics
+
+The classical detectors ship; **the learned CNN does not**. Three training
+configurations were tried against FantasyID's held-out split and all scored at or
+below chance -- see [docs/FORENSICS_CNN_ATTEMPTS.md](docs/FORENSICS_CNN_ATTEMPTS.md)
+for the numbers and the measured diagnosis of each. `CHECK_WEIGHTS["cnn_classifier"]`
+is `0.0` and no checkpoint sits at the production path, so the engine degrades to
+the explainable checks. Do not re-run those configurations without more data, a
+GPU, or a frequency-domain (DCT) approach.
+
+Two checks carry weight `0.0` on purpose and are surfaced as `not_applicable`
+rather than as passes: `cnn_classifier` (above) and `noise_consistency`
+(uncalibrated — `NOISE_DETECTOR_VALIDATED = False`). Both are listed in
+`CONFIG_DISABLED_CHECKS` so they are excluded from the coverage ratio.
+
+## Headline numbers — quote these, nothing else
+
+Measured 2026-09-05 on FantasyID's held-out test split, 450 images
+(150 bonafide + 150 face swaps + 150 text manipulations), regenerated by
+`python -m ml.evaluate_fantasyid --limit 150 --seed 11`:
+
+- **False positives on genuine documents: 0/150 (0%)**
+- **Face swap: 70/150 (47%)**
+- **Text manipulation: 12/150 (8%)**
+- **Overall: 82/300 (27%)**
+
+Never blend these into one accuracy figure. Detection is also strongly
+device-dependent (49% Huawei, 48% iPhone 15, 8% scanner, **0% iPhone 15 Pro**),
+and a single number hides that completely.
+
+Face-swap detection comes from two orthogonal signals: the classical checks
+(29% alone) plus the Phase 3 intra-document face consistency check, whose
+detections have zero overlap with them.
+
+**Do not quote [docs/FORENSICS_RESULTS.md](docs/FORENSICS_RESULTS.md)** — that is
+the synthetic smoke test, whose thresholds were fitted on the very images it
+scores. [docs/FORENSICS_FANTASYID.md](docs/FORENSICS_FANTASYID.md) is the honest
+file, and it is generated, not written: every figure in its prose is now computed
+from the run rather than typed in.
+
+**If you change any detector, re-run the evaluation and let it rewrite that
+file.** Stale numbers have drifted into the docs twice — once after the exposure
+fix, and once inside the generator's own prose, where it claimed 46% on Huawei
+directly beside a table saying 49%.
+
+## The defect this project keeps producing
+
+Six separate bugs have now had the same shape: **a check that could not run being
+presented as one that passed.** They were fixed at four different levels — the
+`applicable` flag on the finding, the noisy-OR combiner, the confidence floor, and
+the coverage floor on the band — and the seventh will look like none of those.
+
+The most recent (2026-09-05) is the pattern in miniature and worth reading before
+adding any check:
+
+- `check_intra_document_consistency` returned `flagged=False` for a
+  single-portrait document but never set `applicable=False`, which defaults to
+  `True`, so the risk scorer rendered a green **PASS** on a check that never ran.
+- Its own docstring *claimed* the correct behaviour.
+- A test named `test_single_portrait_document_is_not_applicable` asserted
+  `flagged`, `tamper_type` and the detail string — but not `applicable`. The
+  suite was green the whole time.
+
+So: when a check cannot run, set `applicable=False` explicitly, and write the
+test against the **rendered `EvidenceStatus`**, not just the flag. The defect
+lives downstream of the flag every time.
+
 ## Non-negotiables
 
-- **No real personal documents, ever.** All training and test data is MIDV-500/2020
-  (public benchmark) or synthetically generated from clean templates.
+- **No real personal documents, ever.** Everything is either a public research
+  benchmark (FantasyID) or synthetically generated from clean templates
+  (`data/samples/`, `data/synthetic/`). Never add a scan of a real ID.
 - **Every stage emits evidence, not a bare pass/fail.** The `evidence[]` array in
   the `POST /api/verify` response (Section 5) is the contract the risk scorer and
   the frontend both depend on.
+- **A check that could not run is `not_applicable`, never `pass`.** See above.
 - **Explainable first.** Classical CV before the forensics CNN; rules-weighted
   scoring before any learned ensemble.
 - **Accuracy is reported per tamper type**, never as one blended number.
+- **No pixel-level tamper localization is promised.** Tampered regions are
+  0.27-4.17% of the image and SOTA detectors score near-zero on pixel-level
+  localization. Output is region-level plus a coarse box.
+- **Liveness is uncalibrated.** `LIVENESS_CALIBRATED = False`, every result
+  carries `passed=None`, and every public anti-spoofing dataset is
+  research-licensed only. Say so; do not imply a deployable model.
 - This is decision support for a human officer, never an auto-reject system.
+
+## Known gaps — say these out loud rather than let a judge find them
+
+1. **SIDTD cross-dataset validation has never been run.** Every number above
+   comes from FantasyID. Until SIDTD is scored, we cannot claim the detectors
+   learned general tamper cues rather than one dataset's signature.
+2. **The mockup audit is not gated.** CI now runs both suites on every pull
+   request, but `backend/scripts/audit_mockup_claims.py` still has nothing to
+   check: the mockups live outside the repo. Commit them under `docs/mockups/`
+   and the script can be wired into the workflow.
+
+   Note also that FantasyID is 2 GB and gitignored, so the tests that score
+   against real held-out data **skip on CI**. The workflow runs `pytest -ra` so
+   those skips are named in the log rather than silently shrinking the suite.
+3. **0% detection on iPhone 15 Pro captures.** Unexplained. A deployment
+   standardised on that hardware would get nothing from this pipeline.
+4. **Text manipulation is close to undetected (8%).** Diffusion-based inpainting
+   blends into the host image's compression statistics. This is the honest weak
+   point.
+5. **Face-match threshold is not ours.** `DEFAULT_MATCH_THRESHOLD = 0.40` is
+   InsightFace's published guidance, not a value calibrated on document+live
+   pairs, which we do not have. Do not quote an EER.
+
+## Working with the team
+
+Three teammates (Pranav, Rohit, Ayush) work from
+`VeriDoc_Team_Work_Division.docx`. They access the models through Docker Compose
+— the `paddle-models` and `insightface-models` named volumes mean nobody
+re-downloads weights. Branch off `main`, open a PR.
+
+Anything a judge will see — a mockup, a slide, an exported screen — should be run
+through `python backend/scripts/audit_mockup_claims.py <file.html>` first. It
+validates every MRZ, cross-checks the decoded fields against the printed dates on
+the same page, and greps for claims the system cannot back. It exits non-zero.

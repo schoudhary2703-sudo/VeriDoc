@@ -29,11 +29,14 @@ CHECK_WEIGHTS: dict[str, float] = {
     # Advisory only -- see NOISE_DETECTOR_VALIDATED in copy_move.py. It reports a
     # measurement but must not move the verdict until calibrated on real captures.
     "noise_consistency": 0.0,
-    # Intra-document face consistency. Measured on FantasyID's held-out split it
-    # detects 11.2% of face swaps at 0.0% false positives, and -- the reason it
-    # earns real weight -- its detections have ZERO overlap with the classical
-    # checks, lifting face-swap recall from 28.7% to 40.0% at no cost in false
-    # positives. See app/modules/face/face_match.py.
+    # Intra-document face consistency. On the Phase 3 pilot (80 genuine + 80 face
+    # swaps) it detected 11.2% of swaps at 0.0% false positives and -- the reason
+    # it earns real weight -- its detections had ZERO overlap with the classical
+    # checks, lifting recall on that sample from 28.7% to 40.0%.
+    #
+    # Those are pilot figures on 160 images, NOT the headline. The full held-out
+    # evaluation (450 images) is docs/FORENSICS_FANTASYID.md and reports 29% ->
+    # 47%. Quote that one. See also app/modules/face/face_match.py.
     "intra_document_face_consistency": 0.40,
     # Stays at zero: three training attempts all scored at or below chance.
     # See docs/FORENSICS_CNN_ATTEMPTS.md.
@@ -128,8 +131,10 @@ def _try_face_consistency(image: np.ndarray) -> ForensicsFinding | None:
     """Cross-check the two printed portraits, when InsightFace is installed.
 
     Costs roughly 1.5 s per document on CPU. That is the price of taking
-    face-swap recall from 28.7% to 40.0% without introducing a single false
-    positive, which is a trade worth making at a checkpoint.
+    face-swap recall from 29% to 47% on the full held-out split without
+    introducing a single false positive -- a trade worth making at a checkpoint.
+    See docs/FORENSICS_FANTASYID.md; the 28.7% -> 40.0% figures quoted elsewhere
+    are the smaller Phase 3 pilot.
     """
     try:
         from app.modules.face import face_match

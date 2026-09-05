@@ -226,11 +226,16 @@ def check_intra_document_consistency(
     faces = detect_faces(image)
 
     if len(faces) < 2:
+        # applicable=False, not merely flagged=False. Without it the risk scorer
+        # maps this finding to a green PASS on a check that never ran -- the
+        # exact failure this project has now hit six times -- and it inflates the
+        # coverage ratio that is supposed to notice a thinly examined document.
         return ForensicsFinding(
             check="intra_document_face_consistency",
             tamper_type=None,
             flagged=False,
             confidence=0.0,
+            applicable=False,
             detail=(
                 f"Only {len(faces)} face region(s) found; this document layout has no "
                 f"second portrait to cross-check against"

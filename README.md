@@ -46,14 +46,14 @@ devices, and no threshold in the engine tuned on any of it.
 | | Result |
 |---|---|
 | **False positives on 150 genuine documents** | **0%** |
-| Face-swap detection | **46%** |
-| Text-manipulation detection | **6%** |
-| Overall attack detection | 26% |
-| Latency, warm | ~2 s per document |
+| Face-swap detection | **47%** |
+| Text-manipulation detection | **8%** |
+| Overall attack detection | 27% |
+| Latency, warm | ~2 s per document (full pipeline, specimen-sized image) |
 
-Detection is strongly device-dependent: 46% on Huawei and iPhone 15 captures, 8%
-on scanner captures, **0% on iPhone 15 Pro**. That is a deployment risk, and a
-single blended accuracy figure would have hidden it.
+Detection is strongly device-dependent: 49% on Huawei and 48% on iPhone 15
+captures, 8% on scanner captures, **0% on iPhone 15 Pro**. That is a deployment
+risk, and a single blended accuracy figure would have hidden it.
 
 Full numbers, and the commands that reproduce every one of them, in
 [docs/DATASETS.md](docs/DATASETS.md).
@@ -62,7 +62,7 @@ Full numbers, and the commands that reproduce every one of them, in
 
 Face-swap detection comes from two signals whose detections have **zero overlap**:
 the classical checks catch 29%, and an intra-document face check catches a further
-11% that the classical checks miss entirely.
+18% that the classical checks miss entirely.
 
 That second check works on a counter-intuitive principle. An ID card carries two
 portraits — the main photograph and a smaller ghost image. A generative face swap
@@ -128,7 +128,7 @@ document, the verdict says so explicitly and names what did not run.
 
 ## What does not work, stated plainly
 
-- **Text manipulation is close to undetected (6%).** Diffusion-based inpainting
+- **Text manipulation is close to undetected (8%).** Diffusion-based inpainting
   does not touch the photograph, which is where our strongest signal lives.
 - **The learned tamper classifier failed.** Three EfficientNet-B0 configurations
   scored at or below chance on held-out data (macro-F1 0.306 / 0.519 / 0.461

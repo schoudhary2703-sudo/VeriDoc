@@ -102,6 +102,26 @@ class TestIntraDocumentConsistency:
         assert finding.tamper_type is None
         assert "second portrait" in finding.detail
 
+        # The assertion this test was named for, and originally missing: without
+        # it the finding rendered as a green PASS in the evidence panel while its
+        # own detail text said the check had nothing to compare.
+        assert finding.applicable is False
+
+    def test_a_check_that_did_not_run_is_not_shown_as_a_pass(self, face_match) -> None:
+        """Guard the mapping, not just the flag -- the defect lived downstream."""
+        import numpy as np
+
+        from app.core.risk_scoring import _forensics_evidence
+        from app.core.schemas import EvidenceStatus, ForensicsResult
+
+        blank = np.full((600, 900, 3), 240, dtype=np.uint8)
+        finding = face_match.check_intra_document_consistency(blank)
+
+        items, _ = _forensics_evidence(
+            ForensicsResult(findings=[finding], score=0.0, tampered=False)
+        )
+        assert items[0].status is EvidenceStatus.NOT_APPLICABLE
+
     def test_finding_reports_both_face_regions(self, face_match) -> None:
         import cv2
 

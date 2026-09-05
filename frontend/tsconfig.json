@@ -14,5 +14,10 @@
     "resolveJsonModule": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "tests"]
+  // vitest.setup.ts must be in the program, not just loaded at runtime. It is
+  // the only place `@testing-library/jest-dom/vitest` is imported, and that
+  // import is what augments vitest's Assertion interface with toBeInTheDocument
+  // and friends. Left out, every test file type-checks as if those matchers do
+  // not exist -- `npm test` passes and `npm run build` fails.
+  "include": ["src", "tests", "vitest.setup.ts"]
 }

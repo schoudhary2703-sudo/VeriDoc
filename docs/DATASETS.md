@@ -41,17 +41,17 @@ cd backend && python -m ml.evaluate_fantasyid --limit 150
 | Metric | Result |
 |---|---|
 | **False positives on genuine documents** | **0 / 150 — 0%** |
-| Face-swap detection | **46%** (69/150) |
-| Text-manipulation detection | **6%** (9/150) |
-| Overall attack detection | 26% (78/300) |
-| Mean analysis time | 2.2 s per image (CPU) |
+| Face-swap detection | **47%** (70/150) |
+| Text-manipulation detection | **8%** (12/150) |
+| Overall attack detection | 27% (82/300) |
+| Mean analysis time | not benchmarked — see the caveat in `FORENSICS_FANTASYID.md` |
 
 ### Per capture device
 
 | Device | Detection |
 |---|---|
-| Huawei Mate 30 | 46% |
-| iPhone 15 | 46% |
+| Huawei Mate 30 | 49% |
+| iPhone 15 | 48% |
 | Kyocera scanner | 8% |
 | **iPhone 15 Pro** | **0%** |
 
@@ -60,15 +60,15 @@ naming: a checkpoint standardised on the wrong capture hardware would get far
 less from this pipeline than the headline number suggests. A single blended
 figure would have hidden it completely.
 
-### Where the 46% comes from
+### Where the 47% comes from
 
 Two orthogonal signals, with **zero overlap** in what they catch:
 
 | Signal | Face-swap detection | False positives |
 |---|---|---|
 | Classical checks (ELA + copy-move) | 29% | 0% |
-| Intra-document face consistency | 11% | 0% |
-| **Combined** | **46%** | **0%** |
+| Intra-document face consistency | 18% | 0% |
+| **Combined** | **47%** | **0%** |
 
 The face check exploits a counter-intuitive property: a generative swap
 re-renders *both* the main portrait and the ghost image from one model, so the

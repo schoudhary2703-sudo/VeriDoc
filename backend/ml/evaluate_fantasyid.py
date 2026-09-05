@@ -109,6 +109,15 @@ def render_report(results: list[dict], sampled: bool) -> str:
         f"({detected / max(len(attacks), 1):.0%})**",
         f"- Mean analysis time: {mean_ms:.0f} ms per image",
         "",
+        "> The timing above is `engine.analyze` only -- forensics, including the ~1.5 s",
+        "> face-consistency check. It is **not** the end-to-end verification latency, and",
+        "> it is not comparable to the ~2 s warm figure in the README: that measures the",
+        "> full pipeline on a 900x600 specimen, while these are full-resolution phone",
+        "> photographs. It is also whatever the machine had spare -- two runs of this",
+        "> identical sample measured 3644 ms and 5362 ms while a video player held the",
+        "> top CPU slot. Treat it as an upper bound, and re-run on an idle machine before",
+        "> quoting a latency anywhere. Detection rates are deterministic and unaffected.",
+        "",
         "## Detection rate per attack type",
         "",
         "| Attack type | Detected | Rate |",
@@ -134,26 +143,44 @@ def render_report(results: list[dict], sampled: bool) -> str:
         hits = sum(r["flagged"] for r in rows)
         lines.append(f"| `{device}` | {hits}/{len(rows)} | {hits / len(rows):.0%} |")
 
+    # Every figure quoted in the prose below is computed from this run. Hardcoding
+    # them drifted once already: the file claimed 46% on Huawei while the table it
+    # sat beside said 49%, because the numbers were typed in from an earlier
+    # evaluation and never revisited. A generated report must not contain a
+    # sentence its own tables contradict.
+    def _rate(bucket: dict, key: str) -> str:
+        rows = bucket.get(key, [])
+        if not rows:
+            return "n/a"
+        return f"{sum(r['flagged'] for r in rows) / len(rows):.0%}"
+
+    face_rate = _rate(by_type, "face")
+    text_rate = _rate(by_type, "text")
+    device_rates = ", ".join(
+        f"{_rate(by_device, d)} on {d}" for d in sorted(by_device)
+    )
+
     lines += [
         "",
         '## Interpretation — read this before drawing conclusions',
         '',
         '**Face-swap detection comes from two orthogonal signals.** The classical checks',
         'alone reach 29% on face swaps; adding intra-document face consistency lifts that',
-        'to 46% with no new false positives, because the two catch disjoint sets of',
+        f'to {face_rate} with no new false positives, because the two catch disjoint sets of',
         'forgeries. The face check exploits a counter-intuitive property: a generative',
         'swap re-renders both the main portrait and the ghost image from one model, so',
         "they become *unnaturally alike*, whereas a genuine card's two portraits are",
         'physically different renderings that agree well but imperfectly.',
         '',
-        '**Text manipulation remains close to undetected (6%).** Diffusion-based',
+        f'**Text manipulation remains close to undetected ({text_rate}).** Diffusion-based',
         "inpainting blends into the host image's noise and compression statistics, and the",
         'on-card photograph it does not touch is exactly where our strongest signal lives.',
         'This is the honest weak point of the system.',
         '',
         '**Detection is strongly device-dependent** and this is a deployment risk worth',
-        'naming: 46% on Huawei and iPhone 15 captures, 8% on scanner captures, 0% on',
-        'iPhone 15 Pro. A single blended accuracy figure would hide that completely.',
+        f'naming: {device_rates}. A checkpoint standardised on the wrong capture hardware',
+        'would get far less from this pipeline than the headline suggests, and a single',
+        'blended accuracy figure would hide that completely.',
         '',
         '**The zero false-positive rate is the property to protect.** Every threshold was',
         'set at its zero-false-positive operating point rather than its accuracy-optimal',

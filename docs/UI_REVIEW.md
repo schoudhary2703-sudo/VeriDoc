@@ -107,7 +107,7 @@ safe fix.
 ## 3. What the screen is missing
 
 **Intra-document face consistency** is our strongest face-swap signal and has no
-row on the screen. It takes face-swap detection from 29% to **46%** at no cost in
+row on the screen. It takes face-swap detection from 29% to **47%** at no cost in
 false positives, and the mechanism is the most memorable thing in the project:
 
 > A generative face swap re-renders *both* the main portrait and the ghost image
@@ -124,13 +124,23 @@ consistency" check. The review case now reads: portrait and ghost image agree at
 face swap pushes this above the 0.884 threshold in
 `backend/app/modules/face/face_match.py:75`. The genuine case shows 0.742.
 
-One inconsistency surfaced while checking these numbers and is **not** resolved:
-the comment on `CHECK_WEIGHTS["intra_document_face_consistency"]` in
-`backend/app/modules/forensics/engine.py:32` says this lifts face-swap recall
-from **28.7% to 40.0%**, while `docs/FORENSICS_FANTASYID.md:42` and `CLAUDE.md`
-both say **29% to 46%**. One of the two is stale. Whoever knows which number the
-last evaluation actually produced should reconcile them — the 46% figure is the
-one being quoted in the pitch, so it is worth being certain of.
+**The inconsistency raised here is now resolved** (2026-09-05). Both figures were
+real, from different runs: **28.7% → 40.0%** was the Phase 3 pilot on 80 genuine +
+80 face swaps, and **29% → 46%** was the full 450-image evaluation. Neither was
+wrong; the code comment simply never said which sample it came from.
+
+Checking it surfaced a third problem the review could not have seen: *every* doc
+still carried pre-`bd0af40` numbers, because the exposure fix changed detection
+and the evaluation was never re-run. It has been now, on the identical sample
+(`--limit 150 --seed 11`), and the current figures are **29% → 47%** face swap,
+**8%** text, **27%** overall, still at **0/150** false positives. `engine.py` now
+names its sample size and points at the full evaluation.
+
+The generator itself was the deeper fault: `evaluate_fantasyid.py` hardcoded its
+prose percentages, so the regenerated file claimed 46% on Huawei directly beside
+a table it had just computed saying 49%. Those figures are now derived from the
+run. This is the same defect class the audit script exists to catch, one level
+further up — a report contradicting its own data.
 
 ---
 
@@ -165,9 +175,9 @@ test split — different card templates from training, real device captures, no
 threshold tuned on any of it:
 
 - **0% false positives** on 150 genuine documents
-- **46%** face-swap detection, **6%** text manipulation, 26% overall
-- 46% on Huawei and iPhone 15 captures, 8% on scanner, **0% on iPhone 15 Pro**
+- **47%** face-swap detection, **8%** text manipulation, 27% overall
+- 49% on Huawei, 48% on iPhone 15, 8% on scanner, **0% on iPhone 15 Pro**
 
-Quote the weak numbers alongside the strong ones. "6% on text manipulation and
+Quote the weak numbers alongside the strong ones. "8% on text manipulation and
 0% on one capture device" is a far stronger position under questioning than a
 single blended figure, because it shows the per-type reporting is real.
