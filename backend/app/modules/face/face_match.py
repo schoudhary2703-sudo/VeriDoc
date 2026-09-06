@@ -90,8 +90,42 @@ DEFAULT_MATCH_THRESHOLD = 0.40
 
 # Intra-document similarity at or above which the two on-card portraits agree so
 # closely that a shared generative origin is the better explanation. Measured at
-# the zero-false-positive point; see the module docstring.
+# the zero-false-positive point on FantasyID; see the module docstring.
 INTRA_DOC_THRESHOLD = 0.884
+
+# Whether a single global threshold is defensible across document templates.
+# It is not, and SIDTD is why.
+#
+# The check assumes the ghost image is a physically distinct rendering of the
+# portrait, so unusually close agreement implies both were generated together.
+# That assumption is a property of the template, not of the document. Latvian
+# passports reproduce the ghost near-identically, so genuine cards sit at a
+# median 0.904 -- higher than FantasyID's *face swaps* at 0.850.
+#
+# Measured on 40 genuine Latvian passports and 80 FantasyID face swaps, the two
+# distributions do not separate at any threshold:
+#
+#     threshold   FantasyID swap recall   genuine Latvian false positives
+#       0.884            19%                        85%
+#       0.900            10%                        57%
+#       0.920             1%                         5%
+#       0.940             0%                         0%
+#
+# and **100% of FantasyID face swaps score below the highest genuine Latvian
+# card (0.924)**. There is no operating point that keeps useful recall without
+# falsely accusing holders of one passport type. This is not a threshold that
+# needs tuning; it is a check that needs a per-template baseline it does not have.
+#
+# So it reports `applicable=False` and carries weight 0.0, exactly as
+# NOISE_DETECTOR_VALIDATED does in copy_move.py. It still measures and reports
+# the similarity, because the measurement is informative to an officer -- it just
+# does not move a verdict.
+#
+# To re-enable: collect genuine documents per issuing template, establish a
+# per-template expected range, key the comparison on it, and set this True. Note
+# that the MRZ issuing state is only recovered on ~37% of real passports (see
+# docs/MRZ_RECOVERY.md), so template identification cannot rely on it alone.
+INTRA_DOC_CALIBRATED = False
 
 
 class FaceEngineError(RuntimeError):
@@ -272,6 +306,25 @@ def check_intra_document_consistency(
         )
         for face in (primary, secondary)
     ]
+
+    if not INTRA_DOC_CALIBRATED:
+        # applicable=False, not flagged=False. The check ran and produced a
+        # number, but that number cannot be judged without a baseline for this
+        # template -- which is a check that could not run, not one that passed.
+        return ForensicsFinding(
+            check="intra_document_face_consistency",
+            tamper_type=None,
+            flagged=False,
+            confidence=0.0,
+            applicable=False,
+            detail=(
+                f"The two portraits agree at cosine {similarity:.3f}. Reported for "
+                f"information only: this check needs a baseline for the document's "
+                f"template, and without one a high value cannot be told apart from a "
+                f"template that simply reprints its ghost image faithfully."
+            ),
+            regions=boxes,
+        )
 
     if similarity < threshold:
         return ForensicsFinding(

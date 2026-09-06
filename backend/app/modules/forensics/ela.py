@@ -58,6 +58,28 @@ MAX_STRUCTURE_DENSITY = 0.06
 # A deviation covering most of the page is capture variation, not a local edit.
 MAX_OUTLIER_FRACTION = 0.45
 
+# Blocks whose saturation sits this far above the page's own median are excluded
+# from the statistics, for the same reason text-dense blocks are.
+#
+# JPEG stores luminance at full resolution and subsamples chroma 4:2:0, so a
+# strongly saturated patch on an otherwise desaturated page carries large
+# re-compression error that describes its colour rather than its edit history.
+#
+# Found on SIDTD: the Latvian passport prints its ghost portrait in saturated
+# blue, and ELA flagged it on 24 of 25 genuine cards -- the same two boxes on
+# every one, at 77-84% across and 38-50% down the page. That is a claim about
+# the passport series, not about any traveller holding one.
+#
+# Masking chroma outliers rather than discarding chroma altogether matters. An
+# ELA map built from luminance alone does fix Latvia, and it also takes FantasyID
+# face-swap detection from 47% to 0% while introducing 33% false positives there:
+# the chroma signal is most of what the detector reads. This keeps that signal
+# and removes only the blocks where it cannot mean what the detector assumes.
+#
+# Measured effect: genuine Latvian false positives 96% -> 0%, FantasyID genuine
+# false positives unchanged at 0%, FantasyID face-swap detection 47% -> 40%.
+MAX_SATURATION_Z = 6.0
+
 
 def compute_ela_map(image: np.ndarray, quality: int = DEFAULT_QUALITY) -> np.ndarray:
     """Return a single-channel float32 error map, one value per pixel.
@@ -151,6 +173,17 @@ def analyze(
     # Structure is measured on a denoised copy so grain is not read as text.
     density = structure_density(to_gray(image), BLOCK_SIZE)
     smooth = density <= MAX_STRUCTURE_DENSITY
+
+    # Chroma outliers are excluded for the same reason as text: their error
+    # describes the colour of the region, not its provenance. See
+    # MAX_SATURATION_Z.
+    if image.ndim == 3:
+        saturation = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)[:, :, 1].astype(np.float32)
+        sat_blocks = block_reduce(saturation, BLOCK_SIZE, how="mean")
+        rows = min(smooth.shape[0], sat_blocks.shape[0])
+        cols = min(smooth.shape[1], sat_blocks.shape[1])
+        smooth = smooth[:rows, :cols] & (robust_z(sat_blocks[:rows, :cols]) <= MAX_SATURATION_Z)
+        block_means = block_means[:rows, :cols]
 
     if smooth.sum() < 8:
         return ForensicsFinding(

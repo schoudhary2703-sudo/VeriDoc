@@ -78,9 +78,14 @@ Measured 2026-09-05 on FantasyID's held-out test split, 450 images
 `python -m ml.evaluate_fantasyid --limit 150 --seed 11`:
 
 - **False positives on genuine documents: 0/150 (0%)**
-- **Face swap: 70/150 (47%)**
-- **Text manipulation: 12/150 (8%)**
-- **Overall: 82/300 (27%)**
+- **Face swap: 37/150 (25%)**
+- **Text manipulation: 10/150 (7%)**
+- **Overall: 47/300 (16%)**
+
+These are lower than the numbers this project quoted until 2026-09-06, and the
+drop is deliberate. The old 47% face-swap figure depended on two behaviours that
+SIDTD showed were properties of FantasyID rather than of the engine; both have
+been removed. See the SIDTD section.
 
 Never blend these into one accuracy figure. Detection is also strongly
 device-dependent (49% Huawei, 48% iPhone 15, 8% scanner, **0% iPhone 15 Pro**),
@@ -115,11 +120,20 @@ in `FORENSICS_SIDTD.csv`.
 
 | | FantasyID | SIDTD |
 |---|---|---|
-| False positives on genuine | 0/150 (0%) | **17/150 (11%)** |
-| Forgery detection | 82/300 (27%) | 8/150 (5%) |
+| False positives on genuine | 0/150 (0%) | **0/150 (0%)** |
+| Forgery detection | 47/300 (16%) | 0/150 (0%) |
 
-**The zero-false-positive property does not survive a second dataset.** That is
-the honest headline and it must be said before the FantasyID numbers, not after.
+**It does now, after two fixes.** When first run (2026-09-06) SIDTD produced
+**17/150 (11%)** false positives, all of them Latvian passports, and the
+zero-false-positive claim did not survive. Both causes were found and both are
+fixed; the numbers above are the state after that work.
+
+Read the detection figures with care. SIDTD's forgeries are crop-and-replace
+inpainting on rescanned documents, which destroys the compression traces ELA
+depends on -- so 0/150 there is close to the honest ceiling for classical
+forensics on that attack, not a regression. The 8/150 (5%) originally reported
+was mostly artefact: **6 of those 8 were Latvian**, the same template effect that
+produced the false positives.
 
 But the failure is concentrated, not diffuse: **all 17 false positives are
 Latvian passports**, 17 of the 18 in the sample. The other nine nationalities are
@@ -149,12 +163,45 @@ silence Latvia would put it beyond FantasyID's entire face-swap distribution and
 destroy the detector. This needs a per-template baseline or an explicit
 applicability restriction — **it cannot be fixed with a number.**
 
-### Why, for ELA — not understood
+### Why, for ELA — understood, and fixed
 
-ELA fired on 16 of the 17. The obvious explanation, heavier JPEG compression, is
-wrong: Latvia sits mid-pack at 0.387 B/px, above `rus` (0.291) and `est` (0.377),
-both of which produce zero false positives. Unexplained. Do not guess in a
-write-up; say it is open.
+The Latvian passport prints its ghost portrait in **saturated blue**. ELA flagged
+it on 24 of 25 genuine cards, always the same two boxes: 77-84% across the page,
+38-50% down. JPEG stores luminance at full resolution and subsamples chroma
+4:2:0, so a strongly saturated patch on an otherwise desaturated page carries
+large re-compression error that describes its *colour*, not its edit history.
+
+Note this is the same template feature that defeats the face check: the ghost is
+the main portrait, tinted. One design decision, two detectors fooled.
+
+`ela.py` now excludes chroma-outlier blocks from its statistics, exactly as it
+already excludes text-dense ones and for the same reason -- their error describes
+the region rather than its provenance. `MAX_SATURATION_Z = 6.0`.
+
+**Do not "fix" this by dropping chroma.** An ELA map built from luminance alone
+also clears Latvia, and takes FantasyID face-swap detection from 47% to 0% while
+introducing 33% false positives there. Most of what this detector reads *is*
+chroma. Masking removes only the blocks where that signal cannot mean what the
+detector assumes; discarding chroma removes the detector.
+
+### The measured trade, for whoever revisits this
+
+With the ELA fix in place, the intra-document face check is the only remaining
+cause of Latvian false positives. Both configurations were measured on both
+datasets:
+
+| | check disabled | check enabled |
+|---|---|---|
+| FantasyID face swap | 25% | **41%** |
+| FantasyID false positives | 0/150 | 0/150 |
+| SIDTD false positives | **0/150 (0%)** | 16/150 (11%) |
+| SIDTD Latvian false positives | **0/18** | 16/18 (89%) |
+
+It buys 16 points of face-swap detection and costs false accusations against 89%
+of one passport template. It ships **disabled** because "a border system must not
+accuse genuine travellers" is a non-negotiable here and 16 points is not worth
+breaking it. Re-enabling needs a per-template baseline, not a new threshold --
+see `INTRA_DOC_CALIBRATED` in `face_match.py` for why no threshold exists.
 
 ### Do not "fix" this by excluding Latvia
 

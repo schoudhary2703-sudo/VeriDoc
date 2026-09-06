@@ -1,6 +1,6 @@
 # Forensics Results — FantasyID Held-Out Test Split
 
-Generated 2026-09-05 by `python -m ml.evaluate_fantasyid`.
+Generated 2026-09-06 by `python -m ml.evaluate_fantasyid`.
 
 ## Why this file exists separately
 
@@ -17,8 +17,8 @@ These are therefore the first honest accuracy numbers in the project.
 
 - Images evaluated: **450** (150 bonafide, 300 attack)  — random sample of the split
 - **False-positive rate on genuine documents: 0/150 (0%)**
-- **Overall attack detection rate: 82/300 (27%)**
-- Mean analysis time: 5362 ms per image
+- **Overall attack detection rate: 47/300 (16%)**
+- Mean analysis time: 1194 ms per image
 
 > The timing above is `engine.analyze` only -- forensics, including the ~1.5 s
 > face-consistency check. It is **not** the end-to-end verification latency, and
@@ -33,35 +33,35 @@ These are therefore the first honest accuracy numbers in the project.
 
 | Attack type | Detected | Rate |
 |---|---|---|
-| `face` | 70/150 | **47%** |
-| `text` | 12/150 | **8%** |
+| `face` | 37/150 | **25%** |
+| `text` | 10/150 | **7%** |
 
 ## Detection rate per capture device
 
 | Device | Detected | Rate |
 |---|---|---|
-| `huawei` | 50/103 | 49% |
-| `iphone15` | 24/50 | 48% |
+| `huawei` | 38/103 | 37% |
+| `iphone15` | 9/50 | 18% |
 | `iphone15pro` | 0/45 | 0% |
-| `scan` | 8/102 | 8% |
+| `scan` | 0/102 | 0% |
 
 ## Interpretation — read this before drawing conclusions
 
 **Face-swap detection comes from two orthogonal signals.** The classical checks
 alone reach 29% on face swaps; adding intra-document face consistency lifts that
-to 47% with no new false positives, because the two catch disjoint sets of
+to 25% with no new false positives, because the two catch disjoint sets of
 forgeries. The face check exploits a counter-intuitive property: a generative
 swap re-renders both the main portrait and the ghost image from one model, so
 they become *unnaturally alike*, whereas a genuine card's two portraits are
 physically different renderings that agree well but imperfectly.
 
-**Text manipulation remains close to undetected (8%).** Diffusion-based
+**Text manipulation remains close to undetected (7%).** Diffusion-based
 inpainting blends into the host image's noise and compression statistics, and the
 on-card photograph it does not touch is exactly where our strongest signal lives.
 This is the honest weak point of the system.
 
 **Detection is strongly device-dependent** and this is a deployment risk worth
-naming: 49% on huawei, 48% on iphone15, 0% on iphone15pro, 8% on scan. A checkpoint standardised on the wrong capture hardware
+naming: 37% on huawei, 18% on iphone15, 0% on iphone15pro, 0% on scan. A checkpoint standardised on the wrong capture hardware
 would get far less from this pipeline than the headline suggests, and a single
 blended accuracy figure would hide that completely.
 
