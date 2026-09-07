@@ -214,6 +214,48 @@ Note also that Latvia has the *highest* detection rate in the run (46%) while
 eight nationalities sit at 0% — most likely the same artefact firing on the
 template rather than on tampering, which makes the 5% weaker than it appears.
 
+## MRZ recovery — measured on real documents, not just our own
+
+`mrz_checksum` carries weight **0.95**, the heaviest signal in the risk scorer.
+Until 2026-09-07 it had only ever been measured on specimens we generated
+ourselves, where it reads 100% of the time. On 60 genuine SIDTD passports it read
+**37%**.
+
+The cause was not OCR: the recogniser was reading the MRZ correctly and the
+parser was discarding it. The filler-confusable table was built entirely from CJK
+glyphs seen on our own specimens, and real passports produce a different set --
+`U+2227` logical and, `U+00B7` middle dot, `U+2264` less-than-or-equal, `U+03BB`
+lambda, `U+03BA` kappa. All are a `<` at MRZ point size and none is in the ICAO
+alphabet, so their presence is proof of a misread.
+
+After extending the set:
+
+| | before | after |
+|---|---|---|
+| full-document OCR | 22/60 (37%) | **44/60 (73%)** |
+| `mrz_only` fast path | 20/60 (33%) | **50/60 (83%)** |
+
+Per template: `aze` 16/16, `srb` 19/19, `lva` 9/17, **`grc` 0/8**.
+
+**A filler in a check-digit position means unreadable, not forged.** Extending the
+table surfaced the danger it creates: one genuine Latvian passport read both
+trailing check digits as `<`, which turned "no MRZ found" into "MRZ found,
+checksum failed" -- a real traveller accused on the heaviest-weighted signal in
+the system. ICAO permits `<` in a check-digit position only when the protected
+field is entirely filler, so such a read is provably invalid rather than merely
+wrong, and `parse_mrz` now returns `present=False` for it. A genuinely altered
+check digit still fails, and there is a test for each of the three cases.
+
+**Greek passports remain at 0%.** Their MRZ rows come back truncated to 31-35
+characters -- the trailing filler runs are lost at the OCR stage, not the parser.
+Padding line 2 would invent the composite check digit, which `_fit_to_layout`
+deliberately refuses. This is an open gap and a recognition-stage problem.
+
+**The fast path now beats the slow one** (83% vs 73%), reversing the previous
+relationship. The frontend still defaults to `fast=false`. Before switching,
+check the fast path's false-failure behaviour on a larger sample -- the single
+bad read above appeared there and not in full-document OCR.
+
 ## The defect this project keeps producing
 
 Six separate bugs have now had the same shape: **a check that could not run being

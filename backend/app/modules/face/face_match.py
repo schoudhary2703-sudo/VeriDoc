@@ -123,8 +123,10 @@ INTRA_DOC_THRESHOLD = 0.884
 #
 # To re-enable: collect genuine documents per issuing template, establish a
 # per-template expected range, key the comparison on it, and set this True. Note
-# that the MRZ issuing state is only recovered on ~37% of real passports (see
-# docs/MRZ_RECOVERY.md), so template identification cannot rely on it alone.
+# that the MRZ issuing state is recovered on 73% of real passports (measured on
+# SIDTD, 2026-09-07; it was 37% before the filler-confusable work), so template
+# identification cannot rely on it alone -- and not at all on Greek passports,
+# where MRZ recovery is currently 0%.
 INTRA_DOC_CALIBRATED = False
 
 

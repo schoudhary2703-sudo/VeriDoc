@@ -269,3 +269,111 @@ class TestTrailingFillerTolerance:
         from app.modules.ocr_mrz.mrz_parser import _fit_to_layout
 
         assert _fit_to_layout(ICAO_LINE_1[:-10], 44) is None
+
+# Reads taken verbatim from PP-OCRv5 on genuine SIDTD passports, not constructed.
+_LVA_LAMBDA = (
+    "P<LVAALKSNIS<<LIVA<<<<<<<<<<<<<<<<<<NΛNK<<<<\n"
+    "LV57865342LVA9703083F2903161080397<12462<<22"
+)
+_AZE_LOGICAL_AND = (
+    "P<AZEFARZHALIYEVA<<FATIHA<<<<<<<<<<<<<<<<<∧<\n"
+    "C551731541AZE8711072F2911168CL0452U<<<<<<<20"
+)
+_CLEAN = (
+    "P<INDSHARMA<<ANANYA<<<<<<<<<<<<<<<<<<<<<<<<<\n"
+    "Z3541287<9IND9203147F3105319<<<<<<<<<<<<<<08"
+)
+# One digit of the date of birth altered; every other character intact.
+_TAMPERED = (
+    "P<INDSHARMA<<ANANYA<<<<<<<<<<<<<<<<<<<<<<<<<\n"
+    "Z3541287<9IND9203148F3105319<<<<<<<<<<<<<<08"
+)
+# lva_passport_02: both trailing check digits recognised as filler.
+_UNREADABLE = (
+    "P<LVAAPSITIS<<AI<IS<<<<<<<<<<<<<<<<<<K<<<<<<\n"
+    "LV56986325LVA9805161M2405171160598<16257<<<<"
+)
+
+
+class TestFillerConfusables:
+    """Glyphs OCR substitutes for '<' on real passports.
+
+    The original confusable set was all CJK, because our synthetic specimens were
+    the only documents this parser had been measured against. Real passports
+    produce a different set entirely; adding it took MRZ recovery on SIDTD from
+    21% to 62%.
+    """
+
+    def test_confusables_repair_in_both_letter_cases(self) -> None:
+        """`_normalize_lines` uppercases before translating.
+
+        Adding lowercase 'lambda' alone recovered 2 of 12 Latvian passports;
+        including its uppercase form recovered 8. A caseless table half-works
+        silently, and the original CJK set could never have exposed it.
+        """
+        from app.modules.ocr_mrz.mrz_parser import FILLER, _FILLER_TRANSLATION
+
+        for ch in "λΛκΚ∧≤·":
+            assert ch.translate(_FILLER_TRANSLATION) == FILLER, f"{ch!r} unrepaired"
+
+    def test_latvian_read_with_greek_lambda(self) -> None:
+        _, check = parse_mrz(_LVA_LAMBDA)
+        assert check.present
+        assert check.mrz_format is MRZFormat.TD3
+
+    def test_azerbaijani_read_with_logical_and(self) -> None:
+        fields, check = parse_mrz(_AZE_LOGICAL_AND)
+        assert check.present
+        assert fields.issuing_state == "AZE"
+
+    def test_repair_restores_a_valid_mrz_rather_than_a_failing_one(self) -> None:
+        """The safety argument: substitution must not manufacture a failure.
+
+        A wrong guess would not merely lose a read -- mrz_checksum carries weight
+        0.95, so it would accuse a genuine traveller.
+        """
+        corrupted = _CLEAN.replace("ANANYA<<<", "ANANYA<λΛ")
+
+        _, control = parse_mrz(_CLEAN)
+        _, repaired = parse_mrz(corrupted)
+
+        assert control.valid
+        assert repaired.present
+        assert repaired.valid
+
+
+class TestUnreadableIsNotTampering:
+    """A check digit read as filler means "could not read", not "forged".
+
+    ICAO permits '<' in a check-digit position only when the field it protects is
+    entirely filler. Anywhere else it is proof the recogniser missed a character,
+    and reporting that as a checksum failure turns a genuine passport into a
+    suspected forgery on the heaviest-weighted signal in the system.
+    """
+
+    def test_filler_check_digit_reports_not_present(self) -> None:
+        _, check = parse_mrz(_UNREADABLE)
+        assert check.present is False
+        assert "could not be read" in " ".join(check.errors)
+
+    def test_it_does_not_render_as_a_failed_checksum(self) -> None:
+        """Guard the rendered status; this project's defects live downstream."""
+        from app.core.risk_scoring import _mrz_evidence
+        from app.core.schemas import EvidenceStatus
+
+        item, contribution = _mrz_evidence(parse_mrz(_UNREADABLE)[1])
+
+        assert item.status is EvidenceStatus.NOT_APPLICABLE
+        assert contribution == 0.0, "an unread MRZ must not move the risk score"
+
+    def test_a_real_check_digit_failure_still_fails(self) -> None:
+        """The guard must not become a way for forgeries to slip through."""
+        _, check = parse_mrz(_TAMPERED)
+        assert check.present is True
+        assert check.valid is False
+
+    def test_a_legitimately_empty_optional_field_still_validates(self) -> None:
+        """'<' IS allowed when the field it protects is entirely filler."""
+        _, check = parse_mrz(_CLEAN)
+        assert check.present is True
+        assert check.valid is True
